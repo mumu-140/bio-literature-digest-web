@@ -367,7 +367,11 @@ function ProtectedLayout({
             </div>
             <div className="hero-badge">{user.role === "admin" ? "Admin Console" : "Member Console"}</div>
           </header>
-          {user.must_change_password ? <PasswordGate onResolved={onUserChange} user={user} /> : children}
+          {user.must_change_password && user.session_auth_method === "password" ? (
+            <PasswordGate onResolved={onUserChange} user={user} />
+          ) : (
+            children
+          )}
         </div>
         <nav className="mobile-tabbar">
           {navItems.map((item) => (

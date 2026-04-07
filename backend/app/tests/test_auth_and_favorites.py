@@ -7,10 +7,11 @@ from datetime import date
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app import database
 from app.config import reset_settings_cache
-from app.models import DigestRun, Paper, PaperDailyEntry
+from app.models import DigestRun, Paper, PaperDailyEntry, User
 from app.security import create_email_login_token
 
 
@@ -42,9 +43,15 @@ class AuthAndFavoritesTest(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["user"]["role"], "admin")
             self.assertEqual(response.json()["user"]["session_auth_method"], "password")
+            self.assertFalse(response.json()["user"]["must_change_password"])
 
     def test_email_login_allows_first_password_change_without_current_password(self) -> None:
         with TestClient(self.app_factory()) as client:
+            with database.SessionLocal() as db:
+                admin = db.scalar(select(User).where(User.email == "admin@example.com"))
+                admin.must_change_password = True
+                db.commit()
+
             token, _ = create_email_login_token("admin@example.com")
             response = client.post("/api/auth/email-login", json={"email": "admin@example.com", "password": token})
             self.assertEqual(response.status_code, 200)

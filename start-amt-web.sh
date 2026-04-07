@@ -3,18 +3,19 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RUNTIME_DIR="$ROOT_DIR/.runtime"
-CONFIG_FILE="$ROOT_DIR/bio-literature-config/web/deploy.env.local"
 BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/frontend"
+PATH_RESOLVER="$ROOT_DIR/tools/resolve_instance_path.py"
+eval "$(/usr/bin/python3 "$PATH_RESOLVER" --shell)"
+RUNTIME_DIR="$WEB_RUNTIME_DIR"
+CONFIG_FILE="$WEB_DEPLOY_ENV_FILE"
 BACKEND_PID_FILE="$RUNTIME_DIR/backend.pid"
 FRONTEND_PID_FILE="$RUNTIME_DIR/frontend.pid"
 BACKEND_LOG="$RUNTIME_DIR/backend.log"
 FRONTEND_BUILD_LOG="$RUNTIME_DIR/frontend-build.log"
 FRONTEND_LOG="$RUNTIME_DIR/frontend.log"
 BACKEND_UVICORN="$BACKEND_DIR/.venv/bin/uvicorn"
-
-cd "$ROOT_DIR"
+DETACHER="$ROOT_DIR/tools/launch_detached.py"
 mkdir -p "$RUNTIME_DIR"
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
@@ -33,6 +34,11 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
+if [[ ! -x "$DETACHER" ]]; then
+  echo "Detached launcher not found: $DETACHER" >&2
+  exit 1
+fi
+
 set -a
 source "$CONFIG_FILE"
 set +a
@@ -42,6 +48,12 @@ BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 BACKEND_PORT="${BACKEND_PORT:-8602}"
 FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 FRONTEND_PORT="${FRONTEND_PORT:-8601}"
+LOCAL_FRONTEND_ORIGIN="${LOCAL_FRONTEND_ORIGIN:-http://${FRONTEND_HOST}:${FRONTEND_PORT}}"
+SESSION_COOKIE_SECURE="${SESSION_COOKIE_SECURE:-false}"
+
+if [[ "${DATABASE_URL:-}" == sqlite:///./* ]]; then
+  DATABASE_URL="sqlite:///$WEB_DATA_DIR/${DATABASE_URL#sqlite:///./}"
+fi
 
 ensure_allowed_port() {
   local label="$1"
@@ -63,20 +75,21 @@ start_backend() {
   fi
 
   echo "Starting backend on ${BACKEND_HOST}:${BACKEND_PORT}"
-  nohup env \
-    DATABASE_URL="$DATABASE_URL" \
-    FRONTEND_ORIGIN="$FRONTEND_ORIGIN" \
-    SESSION_SECRET="$SESSION_SECRET" \
-    SESSION_COOKIE_SECURE=true \
-    WEB_BASE_URL="$WEB_BASE_URL" \
-    INITIAL_ADMIN_EMAIL="$INITIAL_ADMIN_EMAIL" \
-    INITIAL_ADMIN_PASSWORD="$INITIAL_ADMIN_PASSWORD" \
-    INITIAL_ADMIN_NAME="${INITIAL_ADMIN_NAME:-Admin}" \
-    BOOTSTRAP_ADMIN="${BOOTSTRAP_ADMIN:-true}" \
-    DATA_RETENTION_DAYS="${DATA_RETENTION_DAYS:-30}" \
-    "$BACKEND_UVICORN" app.main:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" \
-    >"$BACKEND_LOG" 2>&1 < /dev/null &
-  echo $! > "$BACKEND_PID_FILE"
+  "$DETACHER" \
+    --cwd "$BACKEND_DIR" \
+    --stdout "$BACKEND_LOG" \
+    --pid-file "$BACKEND_PID_FILE" \
+    --env "DATABASE_URL=$DATABASE_URL" \
+    --env "FRONTEND_ORIGIN=$LOCAL_FRONTEND_ORIGIN" \
+    --env "SESSION_SECRET=$SESSION_SECRET" \
+    --env "SESSION_COOKIE_SECURE=$SESSION_COOKIE_SECURE" \
+    --env "WEB_BASE_URL=$WEB_BASE_URL" \
+    --env "INITIAL_ADMIN_EMAIL=$INITIAL_ADMIN_EMAIL" \
+    --env "INITIAL_ADMIN_PASSWORD=$INITIAL_ADMIN_PASSWORD" \
+    --env "INITIAL_ADMIN_NAME=${INITIAL_ADMIN_NAME:-Admin}" \
+    --env "BOOTSTRAP_ADMIN=${BOOTSTRAP_ADMIN:-true}" \
+    --env "DATA_RETENTION_DAYS=${DATA_RETENTION_DAYS:-30}" \
+    -- "$BACKEND_UVICORN" app.main:app --host "$BACKEND_HOST" --port "$BACKEND_PORT"
 }
 
 start_frontend() {
@@ -85,16 +98,16 @@ start_frontend() {
     return
   fi
 
-  echo "Building frontend"
-  (cd "$FRONTEND_DIR" && VITE_APP_HOSTNAME="$APP_HOSTNAME" npm run build >"$FRONTEND_BUILD_LOG" 2>&1)
-
-  echo "Starting frontend preview on ${FRONTEND_HOST}:${FRONTEND_PORT}"
-  (
-    cd "$FRONTEND_DIR"
-    nohup VITE_APP_HOSTNAME="$APP_HOSTNAME" npm run preview -- --host "$FRONTEND_HOST" --port "$FRONTEND_PORT" \
-      >"$FRONTEND_LOG" 2>&1 < /dev/null &
-    echo $! > "$FRONTEND_PID_FILE"
-  )
+  echo "Starting frontend dev server on ${FRONTEND_HOST}:${FRONTEND_PORT}"
+  "$DETACHER" \
+    --cwd "$FRONTEND_DIR" \
+    --stdout "$FRONTEND_LOG" \
+    --pid-file "$FRONTEND_PID_FILE" \
+    --env "VITE_APP_HOSTNAME=$APP_HOSTNAME" \
+    --env "VITE_HOST=$FRONTEND_HOST" \
+    --env "VITE_PORT=$FRONTEND_PORT" \
+    --env "VITE_API_PROXY_TARGET=http://${BACKEND_HOST}:${BACKEND_PORT}" \
+    -- npm run dev -- --host "$FRONTEND_HOST" --port "$FRONTEND_PORT"
 }
 
 start_backend

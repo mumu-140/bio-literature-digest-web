@@ -171,7 +171,7 @@ def sync_users_from_email_config(
             password_hash=hash_password(secrets.token_urlsafe(24)),
             role=default_role,
             is_active=True,
-            must_change_password=True,
+            must_change_password=False,
         )
         db.add(user)
         db.flush()

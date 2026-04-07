@@ -4,7 +4,7 @@
 
 Web console for `bio-literature-digest`. The existing Python digest pipeline remains the producer; this project consumes `digest.csv` and `run_metadata.json`, stores shared daily papers, and exposes account management, favorites, analytics, and export workflows.
 
-Live sensitive configuration and runtime exports live under `./bio-literature-config/`.
+Live instance-specific files live under `./bio-literature-config/`, split into `env/`, `data/`, `runtime/`, and `tunnel/`.
 
 ## Structure
 
@@ -12,7 +12,11 @@ Live sensitive configuration and runtime exports live under `./bio-literature-co
 - `frontend/`: React + Vite single-page app.
 - `deploy/`: Cloudflare Tunnel templates and deployment notes.
 - `docs/`: deployment and architecture notes.
-- `bio-literature-config/`: local-only secrets, Tunnel credentials, access traces, and review export output.
+- `bio-literature-config/`: local-only instance root.
+- `bio-literature-config/env/`: real env files and producer-side local config.
+- `bio-literature-config/data/`: database, access traces, and review exports.
+- `bio-literature-config/runtime/`: pid files and local process logs.
+- `bio-literature-config/tunnel/`: Cloudflare Tunnel config and credentials.
 
 ## Quick Start
 
@@ -36,10 +40,10 @@ Tunnel-oriented local process startup:
 ./start-amt-web.sh
 ```
 
-This uses `./bio-literature-config/web/deploy.env.local` and starts:
+This uses `./bio-literature-config/env/web/deploy.env.local` and starts a local Vite dev server with `/api` proxying:
 
 - backend on `127.0.0.1:8602`
-- frontend preview on `127.0.0.1:8601`
+- frontend dev server on `127.0.0.1:8601`
 
 ## Importing Existing Digest Runs
 
@@ -59,7 +63,7 @@ cd backend
 python sync_email_accounts.py
 ```
 
-By default this reads `../bio-literature-digest/references/email_config.local.yaml`, creates missing `member` users for enabled `to_emails`, and writes audit records for each created account.
+By default this reads the producer email config resolved through `./bio-literature-config/paths.env`, creates missing `member` users for enabled `to_emails`, and writes audit records for each created account.
 
 ## Producer Integration
 
@@ -70,6 +74,6 @@ The integration contract is:
 1. `bio-literature-digest/scripts/run_digest.py` generates `digest.csv`, `digest.xlsx`, `digest.html`, and `run_metadata.json`.
 2. `bio-literature-digest/scripts/run_production_digest.py` archives the same daily run and then calls `bio-literature-digest-web/backend/import_digest_run.py`.
 3. The importer writes the shared daily paper pool into the web database.
-4. `bio-literature-digest/scripts/send_email.py` reads `bio-literature-digest-web/bio-literature-config/web/backend.env.local` to reuse the web `SESSION_SECRET`, then mints passwordless per-recipient login links for the email.
+4. `bio-literature-digest/scripts/send_email.py` resolves the web instance root through `BIO_DIGEST_WEB_ROOT` or the default sibling path, then reads `bio-literature-digest-web/bio-literature-config/env/web/backend.env.local` to reuse the web `SESSION_SECRET`.
 
 Public access is intended to run through Cloudflare Tunnel on your configured public hostname, for example `https://app.example.com`.

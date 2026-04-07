@@ -26,11 +26,13 @@ npm install
 ### 3. 准备配置
 
 ```bash
-mkdir -p bio-literature-config/web
-cp bio-literature-config/web/backend.env.local.example \
-  bio-literature-config/web/backend.env.local
-cp bio-literature-config/web/deploy.env.local.example \
-  bio-literature-config/web/deploy.env.local
+mkdir -p bio-literature-config/env/web
+cp bio-literature-config/paths.env.example \
+  bio-literature-config/paths.env
+cp bio-literature-config/env/web/backend.env.local.example \
+  bio-literature-config/env/web/backend.env.local
+cp bio-literature-config/env/web/deploy.env.local.example \
+  bio-literature-config/env/web/deploy.env.local
 ```
 
 至少检查这些字段：
@@ -72,6 +74,8 @@ npm run dev -- --host 127.0.0.1 --port 8601
 - 前端：`127.0.0.1:8601`
 - 后端：`127.0.0.1:8602`
 
+本地启动脚本会直接起 Vite dev server，并把 `/api` 代理到后端，所以本机访问不会再出现“已登录但没有数据”。
+
 项目启动脚本会拒绝 `8000-8200` 端口段。
 
 ## Tunnel 可选
@@ -87,7 +91,7 @@ Tunnel 配置模板在：
 
 真实本地配置位置是：
 
-- `bio-literature-config/web/cloudflare-tunnel/config.yml`
+- `bio-literature-config/tunnel/web/config.yml`
 
 启动命令：
 
@@ -105,14 +109,20 @@ Tunnel 配置模板在：
 - `frontend/`: React + Vite 前端
 - `deploy/`: 部署模板和 Tunnel 示例
 - `docs/`: 架构和部署说明
-- `bio-literature-config/`: 本地敏感配置、Tunnel 凭据、访问记录、审查表输出
+- `bio-literature-config/`: 实例根目录
+- `bio-literature-config/env/`: 本地真实配置与环境文件
+- `bio-literature-config/data/`: 数据库、访问记录、审查表等运行数据
+- `bio-literature-config/runtime/`: pid 与日志
+- `bio-literature-config/tunnel/`: Tunnel 配置与凭据
 
 其中：
 
-- `bio-literature-config/web/backend.env.local` 是后端本地开发配置
-- `bio-literature-config/web/deploy.env.local` 是本机部署配置
-- `bio-literature-config/web/access-traces/` 是访问记录目录
-- `bio-literature-config/web/review-tables/` 是收藏修改汇总后的审查表目录
+- `bio-literature-config/paths.env` 负责声明实例目录布局
+- `bio-literature-config/env/web/backend.env.local` 是后端本地开发配置
+- `bio-literature-config/env/web/deploy.env.local` 是本机部署配置
+- `bio-literature-config/data/web/access-traces/` 是访问记录目录
+- `bio-literature-config/data/web/review-tables/` 是收藏修改汇总后的审查表目录
+- `bio-literature-config/data/web/bio_digest_web.db` 是网页主数据库
 
 ## 与 `bio-literature-digest` 的联动
 
@@ -145,7 +155,7 @@ Tunnel 配置模板在：
 1. `bio-literature-digest/scripts/run_digest.py` 生成每日产物  
 2. `bio-literature-digest/scripts/run_production_digest.py` 归档产物  
 3. 同一个生产脚本会调用 `bio-literature-digest-web/backend/import_digest_run.py` 导入 web 数据库  
-4. `bio-literature-digest/scripts/send_email.py` 会读取 web 的 `SESSION_SECRET`，给每个收件人生成免密专属登录链接  
+4. `bio-literature-digest/scripts/send_email.py` 会先通过 `paths.env` 找到 web 的 `backend.env.local`，再读取 `SESSION_SECRET` 给每个收件人生成免密专属登录链接  
 5. 用户从邮件进入网页端后，可继续收藏、修改标签和做个人操作
 
 这意味着：

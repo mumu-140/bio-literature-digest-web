@@ -73,6 +73,7 @@ class UserSyncTest(unittest.TestCase):
         self.assertEqual([user.email for user in second.created], [])
         self.assertEqual([user.email for user in second.existing], ["first@example.com", "second@example.com"])
         self.assertEqual([user.email for user in users], ["first@example.com", "second@example.com"])
+        self.assertEqual([user.must_change_password for user in users], [False, False])
         self.assertEqual([log.action_type for log in logs], ["sync_email_recipient_create_user", "sync_email_recipient_create_user"])
 
 

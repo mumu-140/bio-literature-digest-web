@@ -3,13 +3,21 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import sys
 
 from app import database
 from app.migrations import run_runtime_migrations
 from app.services.user_sync import sync_users_from_email_config
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_EMAIL_CONFIG = PROJECT_ROOT.parent / "bio-literature-digest" / "references" / "email_config.local.yaml"
+TOOLS_DIR = PROJECT_ROOT / "tools"
+if str(TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DIR))
+
+from instance_paths import get_instance_paths
+
+INSTANCE_PATHS = get_instance_paths(PROJECT_ROOT)
+DEFAULT_EMAIL_CONFIG = INSTANCE_PATHS.producer_email_config
 
 
 def main() -> int:

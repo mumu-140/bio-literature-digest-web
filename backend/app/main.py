@@ -30,7 +30,7 @@ def bootstrap_admin() -> None:
             password_hash=hash_password(settings.initial_admin_password),
             role="admin",
             is_active=True,
-            must_change_password=True,
+            must_change_password=False,
         )
         db.add(admin_user)
         db.commit()

@@ -10,7 +10,7 @@
     <string>/opt/homebrew/bin/cloudflared</string>
     <string>tunnel</string>
     <string>--config</string>
-    <string>/ABSOLUTE/PATH/TO/bio-literature-digest-web/bio-literature-config/web/cloudflare-tunnel/config.yml</string>
+    <string>/ABSOLUTE/PATH/TO/bio-literature-digest-web/bio-literature-config/tunnel/web/config.yml</string>
     <string>run</string>
   </array>
 
@@ -24,9 +24,9 @@
   <string>/ABSOLUTE/PATH/TO/bio-literature-digest-web</string>
 
   <key>StandardOutPath</key>
-  <string>/ABSOLUTE/PATH/TO/bio-literature-digest-web/.runtime/amt-bio-digest-tunnel.log</string>
+  <string>/ABSOLUTE/PATH/TO/bio-literature-digest-web/bio-literature-config/runtime/web/amt-bio-digest-tunnel.log</string>
 
   <key>StandardErrorPath</key>
-  <string>/ABSOLUTE/PATH/TO/bio-literature-digest-web/.runtime/amt-bio-digest-tunnel.log</string>
+  <string>/ABSOLUTE/PATH/TO/bio-literature-digest-web/bio-literature-config/runtime/web/amt-bio-digest-tunnel.log</string>
 </dict>
 </plist>

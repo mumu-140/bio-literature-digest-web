@@ -12,7 +12,11 @@ This project is the web consumer for `bio-literature-digest`.
 - `backend/` provides FastAPI APIs, SQLAlchemy models, an importer CLI, and deployment-ready configuration.
 - `frontend/` provides the authenticated React UI for daily papers, favorites, analytics, admin users, and exports.
 - `deploy/` contains Cloudflare Tunnel templates and deployment notes for the configured public hostname.
-- `bio-literature-config/` contains local-only secrets, Tunnel credentials, access traces, and review table exports.
+- `bio-literature-config/` is the local-only instance root.
+- `bio-literature-config/env/` stores real env files.
+- `bio-literature-config/data/` stores database and runtime data.
+- `bio-literature-config/runtime/` stores pid files and logs.
+- `bio-literature-config/tunnel/` stores Cloudflare Tunnel config and credentials.
 - The current local process profile is frontend `127.0.0.1:8601`, backend `127.0.0.1:8602`, and ports in `8000-8200` are forbidden for startup scripts.
 
 ## Core Rules

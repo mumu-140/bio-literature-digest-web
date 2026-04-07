@@ -3,7 +3,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RUNTIME_DIR="$ROOT_DIR/.runtime"
+PATH_RESOLVER="$ROOT_DIR/tools/resolve_instance_path.py"
+eval "$(/usr/bin/python3 "$PATH_RESOLVER" --shell)"
+RUNTIME_DIR="$WEB_RUNTIME_DIR"
 
 stop_by_pid_file() {
   local label="$1"

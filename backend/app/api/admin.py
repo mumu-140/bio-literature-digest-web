@@ -35,7 +35,7 @@ def create_user(payload: UserCreate, current_user: User = Depends(require_admin)
         user_group=resolved_group,
         owner_admin_user_id=current_user.id if resolved_group == "outsider" else None,
         is_active=payload.is_active,
-        must_change_password=True,
+        must_change_password=False,
     )
     db.add(user)
     db.flush()
