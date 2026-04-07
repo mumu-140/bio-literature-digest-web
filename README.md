@@ -77,3 +77,7 @@ The integration contract is:
 4. `bio-literature-digest/scripts/send_email.py` resolves the web instance root through `BIO_DIGEST_WEB_ROOT` or the default sibling path, then reads `bio-literature-digest-web/bio-literature-config/env/web/backend.env.local` to reuse the web `SESSION_SECRET`.
 
 Public access is intended to run through Cloudflare Tunnel on your configured public hostname, for example `https://app.example.com`.
+---
+
+## Acknowledgments
+Special thanks to the **[Linux.do](https://linux.do/)** community for your support and feedback.
