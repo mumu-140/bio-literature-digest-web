@@ -1,0 +1,4 @@
+provider: tencent-tmt
+secret_id_env: TENCENT_TMT_SECRET_ID
+secret_key_env: TENCENT_TMT_SECRET_KEY
+glossary_path: ../../bio-literature-digest/references/bio_translation_glossary.yaml

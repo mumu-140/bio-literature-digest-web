@@ -1,0 +1,17 @@
+*.local
+*.local.yaml
+*.local.yml
+*.local.toml
+*.env
+*.env.local
+!.example
+!*.example
+!*.example.yaml
+!*.example.yml
+!README.md
+web/access-traces/
+web/review-tables/
+web/cloudflare-tunnel/*
+!web/cloudflare-tunnel/*.example
+!web/cloudflare-tunnel/*.example.yaml
+!web/cloudflare-tunnel/*.example.yml
