@@ -1,6 +1,6 @@
 # Bio Literature Digest Web 中文说明
 
-这是 `bio-literature-digest` 的网页端项目。  
+这是 [bio-literature-digest](https://github.com/mumu-140/BioPlant-literature-skills/edit/main/) 的网页端项目。  
 它不负责抓取和翻译文献，只负责导入生产端生成的 `digest.csv`、`digest.html`、`digest.xlsx`、`run_metadata.json`，并提供账户、收藏、统计、导出和审查汇总能力。
 
 ## 快速开始
@@ -206,3 +206,7 @@ python export_favorite_review_tables.py
 - `.runtime`
 - 访问记录
 - 审查导出结果
+---
+
+## Acknowledgments
+Special thanks to the **[Linux.do](https://linux.do/)** community for your support and feedback.
