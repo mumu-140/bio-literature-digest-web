@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-import secrets
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import User
-from ..security import hash_password
 from .audit import record_action
 
 
@@ -19,6 +17,8 @@ class SyncedUser:
     email: str
     name: str
     role: str
+    user_group: str = "internal"
+    is_active: bool = True
 
 
 @dataclass
@@ -26,6 +26,7 @@ class UserSyncResult:
     recipients: list[str]
     created: list[SyncedUser]
     existing: list[SyncedUser]
+    updated: list[SyncedUser] = field(default_factory=list)
 
 
 def _strip_quotes(value: str) -> str:
@@ -131,6 +132,39 @@ def _dedupe(values: list[str]) -> list[str]:
     return result
 
 
+def _normalize_user_group(record: dict[str, Any]) -> str:
+    raw_group = str(record.get("group", "") or record.get("user_group", "")).strip().lower()
+    return raw_group or "internal"
+
+
+def _collect_users_from_yaml_mapping(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    users = payload.get("users")
+    if not isinstance(users, list):
+        return []
+    normalized: list[dict[str, Any]] = []
+    seen_emails: set[str] = set()
+    for item in users:
+        if not isinstance(item, dict):
+            continue
+        email = str(item.get("email", "") or "").strip().lower()
+        if not email or email in seen_emails:
+            continue
+        seen_emails.add(email)
+        normalized.append(
+            {
+                "uid": str(item.get("uid", "") or "").strip(),
+                "email": email,
+                "name": str(item.get("name", "") or "").strip(),
+                "role": str(item.get("role", "") or "").strip() or "member",
+                "user_group": _normalize_user_group(item),
+                "is_active": _parse_bool(item.get("is_active"), default=True),
+                "receives_digest": _parse_bool(item.get("receives_digest"), default=True),
+                "smtp_profile": str(item.get("smtp_profile", "") or "").strip(),
+            }
+        )
+    return normalized
+
+
 def read_recipient_emails(config_path: Path) -> list[str]:
     raw_text = config_path.read_text(encoding="utf-8")
     try:
@@ -142,6 +176,19 @@ def read_recipient_emails(config_path: Path) -> list[str]:
     except Exception:
         pass
     return _collect_recipients_from_text(raw_text)
+
+
+def read_users_config(config_path: Path) -> list[dict[str, Any]]:
+    raw_text = config_path.read_text(encoding="utf-8")
+    try:
+        import yaml  # type: ignore
+
+        payload = yaml.safe_load(raw_text) or {}
+        if isinstance(payload, dict):
+            return _collect_users_from_yaml_mapping(payload)
+    except Exception:
+        pass
+    return []
 
 
 def derive_display_name(email: str) -> str:
@@ -168,7 +215,7 @@ def sync_users_from_email_config(
         user = User(
             email=email,
             name=derive_display_name(email),
-            password_hash=hash_password(secrets.token_urlsafe(24)),
+            password_hash="passwordless",
             role=default_role,
             is_active=True,
             must_change_password=False,
@@ -188,3 +235,130 @@ def sync_users_from_email_config(
 
     db.commit()
     return UserSyncResult(recipients=recipients, created=created, existing=existing)
+
+
+def _to_synced_user(user: User) -> SyncedUser:
+    return SyncedUser(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        role=user.role,
+        user_group=user.user_group,
+        is_active=user.is_active,
+    )
+
+
+def sync_users_from_users_config(
+    db: Session,
+    *,
+    config_path: Path,
+    actor_user_id: int | None = None,
+    default_role: str = "member",
+) -> UserSyncResult:
+    records = read_users_config(config_path)
+    recipients = [record["email"] for record in records if record.get("is_active") and record.get("receives_digest")]
+    created: list[SyncedUser] = []
+    existing: list[SyncedUser] = []
+    updated: list[SyncedUser] = []
+
+    by_email = {record["email"]: record for record in records}
+    for email, record in by_email.items():
+        user = db.scalar(select(User).where(User.email == email))
+        role = str(record.get("role", "") or "").strip() or default_role
+        name = str(record.get("name", "") or "").strip() or derive_display_name(email)
+        user_group = str(record.get("user_group", "") or "internal").strip() or "internal"
+        is_active = _parse_bool(record.get("is_active"), default=True)
+        if user is None:
+            user = User(
+                email=email,
+                name=name,
+                password_hash="passwordless",
+                role=role,
+                user_group=user_group,
+                is_active=is_active,
+                must_change_password=False,
+            )
+            db.add(user)
+            db.flush()
+            detail = {
+                "email": user.email,
+                "uid": str(record.get("uid", "") or ""),
+                "role": user.role,
+                "user_group": user.user_group,
+                "is_active": user.is_active,
+                "config_path": str(config_path),
+            }
+            record_action(
+                db,
+                action_type="sync_users_config_create_user",
+                actor_user_id=actor_user_id,
+                target_user_id=user.id,
+                entity_type="user",
+                entity_id=user.id,
+                detail=detail,
+            )
+            created.append(_to_synced_user(user))
+            continue
+
+        changed = False
+        if user.name != name:
+            user.name = name
+            changed = True
+        if user.role != role:
+            user.role = role
+            changed = True
+        if user.user_group != user_group:
+            user.user_group = user_group
+            if user_group != "outsider":
+                user.owner_admin_user_id = None
+            changed = True
+        if user.is_active != is_active:
+            user.is_active = is_active
+            changed = True
+
+        existing.append(_to_synced_user(user))
+        if changed:
+            detail = {
+                "email": user.email,
+                "uid": str(record.get("uid", "") or ""),
+                "role": user.role,
+                "user_group": user.user_group,
+                "is_active": user.is_active,
+                "config_path": str(config_path),
+            }
+            record_action(
+                db,
+                action_type="sync_users_config_update_user",
+                actor_user_id=actor_user_id,
+                target_user_id=user.id,
+                entity_type="user",
+                entity_id=user.id,
+                detail=detail,
+            )
+            updated.append(_to_synced_user(user))
+
+    db.commit()
+    return UserSyncResult(recipients=_dedupe(recipients), created=created, existing=existing, updated=updated)
+
+
+def sync_users_from_config(
+    db: Session,
+    *,
+    config_path: Path,
+    actor_user_id: int | None = None,
+    default_role: str = "member",
+) -> UserSyncResult:
+    records = read_users_config(config_path)
+    if records:
+        return sync_users_from_users_config(
+            db,
+            config_path=config_path,
+            actor_user_id=actor_user_id,
+            default_role=default_role,
+        )
+    return sync_users_from_email_config(
+        db,
+        config_path=config_path,
+        actor_user_id=actor_user_id,
+        default_role=default_role,
+    )

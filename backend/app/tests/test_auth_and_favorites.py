@@ -7,21 +7,20 @@ from datetime import date
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select
 
-from app import database
+from app import shared_database
 from app.config import reset_settings_cache
-from app.models import DigestRun, Paper, PaperDailyEntry, User
-from app.security import create_email_login_token
+from app.shared_models import SharedDigestMembership, SharedDigestRun, SharedLiteratureItem
 
 
 class AuthAndFavoritesTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmpdir = tempfile.TemporaryDirectory(prefix="bio-digest-web-api-")
         db_path = Path(self.tmpdir.name) / "api.db"
+        shared_db_path = Path(self.tmpdir.name) / "shared.db"
         os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
+        os.environ["SHARED_DATABASE_URL"] = f"sqlite:///{shared_db_path}"
         os.environ["INITIAL_ADMIN_EMAIL"] = "admin@example.com"
-        os.environ["INITIAL_ADMIN_PASSWORD"] = "ChangeMe123!"
         os.environ["ACCESS_TRACE_DIR"] = str(Path(self.tmpdir.name) / "access-traces")
         reset_settings_cache()
         self.app_factory = None
@@ -32,57 +31,43 @@ class AuthAndFavoritesTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmpdir.cleanup()
         os.environ.pop("DATABASE_URL", None)
+        os.environ.pop("SHARED_DATABASE_URL", None)
         os.environ.pop("INITIAL_ADMIN_EMAIL", None)
-        os.environ.pop("INITIAL_ADMIN_PASSWORD", None)
         os.environ.pop("ACCESS_TRACE_DIR", None)
         reset_settings_cache()
 
     def test_admin_login(self) -> None:
         with TestClient(self.app_factory()) as client:
-            response = client.post("/api/auth/login", json={"email": "admin@example.com", "password": "ChangeMe123!"})
+            response = client.post("/api/auth/login", json={"email": "admin@example.com"})
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["user"]["role"], "admin")
-            self.assertEqual(response.json()["user"]["session_auth_method"], "password")
-            self.assertFalse(response.json()["user"]["must_change_password"])
 
-    def test_email_login_allows_first_password_change_without_current_password(self) -> None:
+    def test_login_auto_creates_member(self) -> None:
         with TestClient(self.app_factory()) as client:
-            with database.SessionLocal() as db:
-                admin = db.scalar(select(User).where(User.email == "admin@example.com"))
-                admin.must_change_password = True
-                db.commit()
-
-            token, _ = create_email_login_token("admin@example.com")
-            response = client.post("/api/auth/email-login", json={"email": "admin@example.com", "password": token})
+            response = client.post("/api/auth/login", json={"email": "new-user@example.com", "name": "New User"})
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.json()["user"]["session_auth_method"], "email_link")
+            self.assertEqual(response.json()["user"]["email"], "new-user@example.com")
+            self.assertEqual(response.json()["user"]["role"], "member")
 
             me = client.get("/api/auth/me")
             self.assertEqual(me.status_code, 200)
-            self.assertEqual(me.json()["session_auth_method"], "email_link")
-
-            change = client.post(
-                "/api/auth/change-password",
-                json={"current_password": "", "new_password": "NewPassword123!"},
-            )
-            self.assertEqual(change.status_code, 200)
-            self.assertFalse(change.json()["must_change_password"])
-
-            login = client.post("/api/auth/login", json={"email": "admin@example.com", "password": "NewPassword123!"})
-            self.assertEqual(login.status_code, 200)
 
     def test_favorite_reuses_shared_paper_metadata(self) -> None:
         with TestClient(self.app_factory()) as client:
-            login = client.post("/api/auth/login", json={"email": "admin@example.com", "password": "ChangeMe123!"})
+            login = client.post("/api/auth/login", json={"email": "admin@example.com"})
             self.assertEqual(login.status_code, 200)
 
-            with database.SessionLocal() as db:
-                digest_run = DigestRun(digest_date=date.fromisoformat("2026-04-06"), work_dir=str(Path(self.tmpdir.name) / "run"))
+            with shared_database.SharedSessionLocal() as db:
+                digest_run = SharedDigestRun(
+                    digest_date=date.fromisoformat("2026-04-06"),
+                    run_dir=str(Path(self.tmpdir.name) / "run"),
+                )
                 db.add(digest_run)
                 db.flush()
-                paper = Paper(
+                paper = SharedLiteratureItem(
                     canonical_key="doi:10.1000/shared",
                     doi="10.1000/shared",
+                    canonical_url="https://example.org/shared",
                     journal="Nature",
                     category="omics",
                     publish_date="2026-04-06T00:01:00Z",
@@ -96,13 +81,14 @@ class AuthAndFavoritesTest(unittest.TestCase):
                 db.add(paper)
                 db.flush()
                 db.add(
-                    PaperDailyEntry(
+                    SharedDigestMembership(
                         digest_run_id=digest_run.id,
-                        paper_id=paper.id,
+                        item_id=paper.id,
                         digest_date=date.fromisoformat("2026-04-06"),
+                        list_type="digest",
                         publication_stage="journal",
                         row_index=1,
-                        raw_record_json={},
+                        source_record_json={},
                     )
                 )
                 db.commit()
@@ -114,8 +100,8 @@ class AuthAndFavoritesTest(unittest.TestCase):
             self.assertEqual(create_second.status_code, 201)
             self.assertEqual(create_first.json()["id"], create_second.json()["id"])
 
-            with database.SessionLocal() as db:
-                paper = db.get(Paper, paper_id)
+            with shared_database.SharedSessionLocal() as db:
+                paper = db.get(SharedLiteratureItem, paper_id)
                 paper.title_en = "Updated shared title"
                 db.commit()
 

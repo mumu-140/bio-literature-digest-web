@@ -15,7 +15,7 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str = Field(min_length=8)
+    pass
 
 
 class UserUpdate(BaseModel):
@@ -24,11 +24,6 @@ class UserUpdate(BaseModel):
     user_group: Optional[str] = None
     owner_admin_user_id: Optional[int] = None
     is_active: Optional[bool] = None
-    must_change_password: Optional[bool] = None
-
-
-class ResetPasswordRequest(BaseModel):
-    password: str = Field(min_length=8)
 
 
 class UserRead(UserBase):
@@ -36,7 +31,6 @@ class UserRead(UserBase):
 
     id: int
     owner_admin_user_id: Optional[int] = None
-    must_change_password: bool
     created_at: datetime
     updated_at: datetime
     last_login_at: Optional[datetime] = None
@@ -44,12 +38,7 @@ class UserRead(UserBase):
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
-
-
-class ChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str = Field(min_length=8)
+    name: str = ""
 
 
 class AuthUser(BaseModel):
@@ -57,9 +46,7 @@ class AuthUser(BaseModel):
     email: EmailStr
     name: str
     role: str
-    must_change_password: bool
     is_active: bool
-    session_auth_method: str = "password"
 
 
 class LoginResponse(BaseModel):

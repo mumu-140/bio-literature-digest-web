@@ -16,9 +16,7 @@ type AuthUser = {
   email: string;
   name: string;
   role: "admin" | "member";
-  must_change_password: boolean;
   is_active: boolean;
-  session_auth_method: "password" | "email_link";
 };
 
 type PaperItem = {
@@ -94,7 +92,6 @@ type UserItem = {
   user_group: "internal" | "outsider";
   owner_admin_user_id?: number | null;
   is_active: boolean;
-  must_change_password: boolean;
   created_at: string;
   last_login_at?: string | null;
 };
@@ -367,11 +364,7 @@ function ProtectedLayout({
             </div>
             <div className="hero-badge">{user.role === "admin" ? "Admin Console" : "Member Console"}</div>
           </header>
-          {user.must_change_password && user.session_auth_method === "password" ? (
-            <PasswordGate onResolved={onUserChange} user={user} />
-          ) : (
-            children
-          )}
+          {children}
         </div>
         <nav className="mobile-tabbar">
           {navItems.map((item) => (
@@ -396,48 +389,13 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const hintedEmail = searchParams.get("email") || "";
-  const emailToken = searchParams.get("token") || "";
-  const [form, setForm] = useState({ email: searchParams.get("email") || "", password: "" });
+  const [form, setForm] = useState({ email: searchParams.get("email") || "", name: "" });
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
     setForm((current) => (current.email === hintedEmail ? current : { ...current, email: hintedEmail }));
   }, [hintedEmail]);
-
-  useEffect(() => {
-    if (!hintedEmail || !emailToken) {
-      return;
-    }
-    let cancelled = false;
-    async function performEmailLogin() {
-      setPending(true);
-      setError("");
-      try {
-        const response = await request<{ user: AuthUser }>("/api/auth/email-login", {
-          method: "POST",
-          body: JSON.stringify({ email: hintedEmail, password: emailToken }),
-        });
-        if (cancelled) {
-          return;
-        }
-        onLogin(response.user);
-        navigate(searchParams.get("next") || "/digests/today", { replace: true });
-      } catch (submitError) {
-        if (!cancelled) {
-          setError(submitError instanceof Error ? submitError.message : "邮件登录失败");
-        }
-      } finally {
-        if (!cancelled) {
-          setPending(false);
-        }
-      }
-    }
-    void performEmailLogin();
-    return () => {
-      cancelled = true;
-    };
-  }, [emailToken, hintedEmail, navigate, onLogin, searchParams]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -466,73 +424,22 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
           统一查看今日文献、收藏、月度网络图、CNS 趋势和批量导出。
         </p>
         {hintedEmail ? <p className="muted">本邮件链接对应账户：{hintedEmail}</p> : null}
-        {emailToken ? <p className="muted">检测到邮件专属登录链接，正在尝试免密登录。</p> : null}
         <form className="stack" onSubmit={submit}>
           <label>
             邮箱
             <input value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
           </label>
           <label>
-            密码
-            <input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+            昵称（可选）
+            <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
           </label>
           {error ? <p className="error-text">{error}</p> : null}
           <button className="primary-button" type="submit" disabled={pending}>
-            {pending ? (emailToken ? "免密登录中…" : "登录中…") : "登录"}
+            {pending ? "登录中…" : "登录"}
           </button>
         </form>
       </div>
     </div>
-  );
-}
-
-function PasswordGate({ user, onResolved }: { user: AuthUser; onResolved: (user: AuthUser) => void }) {
-  const [form, setForm] = useState({ current_password: "", new_password: "" });
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const canSkipCurrentPassword = user.session_auth_method === "email_link" && user.must_change_password;
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setError("");
-    setMessage("");
-    try {
-      const updated = await request<AuthUser>("/api/auth/change-password", {
-        method: "POST",
-        body: JSON.stringify(form),
-      });
-      setMessage("密码已更新。");
-      onResolved(updated);
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "修改密码失败");
-    }
-  }
-
-  return (
-    <section className="card">
-      <div className="card-header">
-        <div>
-          <p className="eyebrow">首次登录</p>
-          <h2>{user.name}，请先修改密码</h2>
-        </div>
-      </div>
-      <form className="inline-form" onSubmit={submit}>
-        {canSkipCurrentPassword ? null : (
-          <label>
-            当前密码
-            <input type="password" value={form.current_password} onChange={(event) => setForm({ ...form, current_password: event.target.value })} />
-          </label>
-        )}
-        <label>
-          新密码
-          <input type="password" value={form.new_password} onChange={(event) => setForm({ ...form, new_password: event.target.value })} />
-        </label>
-        <button className="primary-button" type="submit">提交</button>
-      </form>
-      {canSkipCurrentPassword ? <p className="small-copy">当前是邮件专属登录，会直接为这个账户设置新密码，不需要输入旧密码。</p> : null}
-      {message ? <p className="success-text">{message}</p> : null}
-      {error ? <p className="error-text">{error}</p> : null}
-    </section>
   );
 }
 
@@ -1597,7 +1504,7 @@ function UserSelect({
 
 function AdminUsersPage() {
   const [users, setUsers] = useState<UserItem[]>([]);
-  const [form, setForm] = useState({ email: "", name: "", password: "", role: "member", user_group: "internal" });
+  const [form, setForm] = useState({ email: "", name: "", role: "member", user_group: "internal" });
 
   async function load() {
     setUsers(await request<UserItem[]>("/api/admin/users"));
@@ -1613,17 +1520,7 @@ function AdminUsersPage() {
       method: "POST",
       body: JSON.stringify({ ...form, name: form.name || form.email.split("@")[0] || "" }),
     });
-    setForm({ email: "", name: "", password: "", role: "member", user_group: "internal" });
-    await load();
-  }
-
-  async function resetPassword(userId: number) {
-    const password = window.prompt("输入新密码");
-    if (!password) return;
-    await request(`/api/admin/users/${userId}/reset-password`, {
-      method: "POST",
-      body: JSON.stringify({ password }),
-    });
+    setForm({ email: "", name: "", role: "member", user_group: "internal" });
     await load();
   }
 
@@ -1647,7 +1544,6 @@ function AdminUsersPage() {
         <form className="stack" onSubmit={createUser}>
           <input placeholder="邮箱" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
           <input placeholder="姓名" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-          <input placeholder="初始密码" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
           <select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}>
             <option value="member">member</option>
             <option value="admin">admin</option>
@@ -1695,7 +1591,6 @@ function AdminUsersPage() {
                   </div>
                   <div className="mobile-card-actions">
                     <button className="table-link" onClick={() => toggleUser(user)}>{user.is_active ? "停用" : "启用"}</button>
-                    <button className="table-link" onClick={() => resetPassword(user.id)}>重置密码</button>
                   </div>
                 </article>
               ))}
@@ -1725,7 +1620,6 @@ function AdminUsersPage() {
                     <td>{user.last_login_at || "never"}</td>
                     <td>
                       <button className="table-link" onClick={() => toggleUser(user)}>{user.is_active ? "停用" : "启用"}</button>
-                      <button className="table-link" onClick={() => resetPassword(user.id)}>重置密码</button>
                     </td>
                   </tr>
                 ))}
@@ -1822,7 +1716,7 @@ function getPageMeta(pathname: string, user: AuthUser) {
     return {
       eyebrow: "Admin Control",
       title: "账户与权限",
-      description: "维护成员账户、角色状态和初始密码策略，确保研究控制台可持续运作。",
+      description: "维护成员账户与角色状态，确保研究控制台可持续运作。",
     };
   }
 

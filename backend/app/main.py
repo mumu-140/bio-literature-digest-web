@@ -11,7 +11,8 @@ from .config import get_settings
 from . import database
 from .migrations import run_runtime_migrations
 from .models import User
-from .security import hash_password
+from . import shared_database
+from .shared_models import SharedBase
 
 
 def bootstrap_admin() -> None:
@@ -27,7 +28,7 @@ def bootstrap_admin() -> None:
         admin_user = User(
             email=settings.initial_admin_email.lower(),
             name=settings.initial_admin_name,
-            password_hash=hash_password(settings.initial_admin_password),
+            password_hash="passwordless",
             role="admin",
             is_active=True,
             must_change_password=False,
@@ -41,6 +42,8 @@ async def lifespan(_: FastAPI):
     database.configure_database()
     run_runtime_migrations(database.engine)
     database.Base.metadata.create_all(bind=database.engine)
+    shared_database.configure_shared_database()
+    SharedBase.metadata.create_all(bind=shared_database.shared_engine)
     bootstrap_admin()
     yield
 

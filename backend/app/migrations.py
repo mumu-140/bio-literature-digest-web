@@ -132,5 +132,5 @@ def _migrate_session_auth_method(engine: Engine) -> None:
     if not columns or "auth_method" in columns:
         return
     with engine.begin() as connection:
-        connection.execute(text("ALTER TABLE sessions ADD COLUMN auth_method VARCHAR(32) NOT NULL DEFAULT 'password'"))
+        connection.execute(text("ALTER TABLE sessions ADD COLUMN auth_method VARCHAR(32) NOT NULL DEFAULT 'passwordless'"))
         connection.execute(text("CREATE INDEX IF NOT EXISTS ix_sessions_auth_method ON sessions (auth_method)"))

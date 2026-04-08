@@ -9,10 +9,15 @@ from sqlalchemy.orm import Session
 from .config import get_settings
 from .database import get_session
 from .models import Session as UserSession, User
+from .shared_database import get_shared_session
 from .security import hash_session_token
 
 
 def get_db(session: Session = Depends(get_session)) -> Session:
+    return session
+
+
+def get_shared_db(session: Session = Depends(get_shared_session)) -> Session:
     return session
 
 

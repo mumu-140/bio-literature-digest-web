@@ -8,21 +8,23 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import ExportJob, Favorite, Paper, PaperDailyEntry, User
+from ..shared_models import SharedActor, SharedActorFavorite, SharedDigestMembership, SharedExportJob, SharedLiteratureItem
 
 
 def create_export_job(
     db: Session,
     *,
-    requested_by: User,
+    actor: Optional[SharedActor],
+    requested_by_key: str,
     kind: str,
     output_name: str,
     content_type: str,
     content_text: str,
     params: dict,
-) -> ExportJob:
-    job = ExportJob(
-        requested_by=requested_by.id,
+) -> SharedExportJob:
+    job = SharedExportJob(
+        actor_id=actor.id if actor else None,
+        requested_by_key=requested_by_key,
         kind=kind,
         status="completed",
         output_name=output_name,
@@ -37,15 +39,23 @@ def create_export_job(
     return job
 
 
-def fetch_papers_for_export(db: Session, date_value: Optional[str]) -> list[Paper]:
-    statement = select(Paper).join(PaperDailyEntry, PaperDailyEntry.paper_id == Paper.id)
+def fetch_items_for_export(db: Session, date_value: Optional[str]) -> list[SharedLiteratureItem]:
+    statement = (
+        select(SharedLiteratureItem)
+        .join(SharedDigestMembership, SharedDigestMembership.item_id == SharedLiteratureItem.id)
+        .where(SharedDigestMembership.list_type == "digest")
+    )
     if date_value:
-        statement = statement.where(PaperDailyEntry.digest_date == date_type.fromisoformat(date_value))
+        statement = statement.where(SharedDigestMembership.digest_date == date_type.fromisoformat(date_value))
     return list(db.scalars(statement).unique())
 
 
-def fetch_favorites_for_export(db: Session, user_id: int) -> list[Favorite]:
-    return list(db.scalars(select(Favorite).where(Favorite.user_id == user_id).order_by(Favorite.favorited_at.desc())))
+def fetch_actor_favorites_for_export(db: Session, actor_id: int) -> list[SharedActorFavorite]:
+    return list(
+        db.scalars(
+            select(SharedActorFavorite).where(SharedActorFavorite.actor_id == actor_id).order_by(SharedActorFavorite.favorited_at.desc())
+        )
+    )
 
 
 def csv_from_rows(rows: list[dict[str, str]], columns: list[tuple[str, str]]) -> str:
@@ -57,24 +67,24 @@ def csv_from_rows(rows: list[dict[str, str]], columns: list[tuple[str, str]]) ->
     return buffer.getvalue()
 
 
-def papers_to_rows(papers: list[Paper]) -> list[dict[str, str]]:
+def items_to_rows(items: list[SharedLiteratureItem]) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
-    for paper in papers:
+    for item in items:
         rows.append(
             {
-                "id": str(paper.id),
-                "doi": paper.doi,
-                "journal": paper.journal,
-                "publish_date": paper.publish_date,
-                "category": paper.category,
-                "interest_level": paper.interest_level,
-                "interest_tag": paper.interest_tag,
-                "title_en": paper.title_en,
-                "title_zh": paper.title_zh,
-                "summary_zh": paper.summary_zh,
-                "abstract": paper.abstract,
-                "article_url": paper.article_url,
-                "tags": ", ".join(paper.tags_json or []),
+                "id": str(item.id),
+                "doi": item.doi,
+                "journal": item.journal,
+                "publish_date": item.publish_date,
+                "category": item.category,
+                "interest_level": item.interest_level,
+                "interest_tag": item.interest_tag,
+                "title_en": item.title_en,
+                "title_zh": item.title_zh,
+                "summary_zh": item.summary_zh,
+                "abstract": item.abstract,
+                "article_url": item.article_url,
+                "tags": ", ".join(item.tags_json or []),
             }
         )
     return rows

@@ -8,7 +8,12 @@ from sqlalchemy import select
 
 from app import database
 from app.models import ActionLog, User
-from app.services.user_sync import read_recipient_emails, sync_users_from_email_config
+from app.services.user_sync import (
+    read_recipient_emails,
+    read_users_config,
+    sync_users_from_config,
+    sync_users_from_email_config,
+)
 
 
 class UserSyncTest(unittest.TestCase):
@@ -75,6 +80,45 @@ class UserSyncTest(unittest.TestCase):
         self.assertEqual([user.email for user in users], ["first@example.com", "second@example.com"])
         self.assertEqual([user.must_change_password for user in users], [False, False])
         self.assertEqual([log.action_type for log in logs], ["sync_email_recipient_create_user", "sync_email_recipient_create_user"])
+
+    def test_read_users_config_and_sync_users_from_config(self) -> None:
+        config_path = self.root / "users.local.yaml"
+        config_path.write_text(
+            "\n".join(
+                [
+                    "users:",
+                    "  - uid: UDI-1",
+                    "    email: owner@example.com",
+                    "    name: Owner",
+                    "    role: admin",
+                    "    group: internal",
+                    "    is_active: true",
+                    "    receives_digest: true",
+                    "    smtp_profile: qq_mail",
+                    "  - uid: UDI-2",
+                    "    email: member@example.com",
+                    "    name: Member",
+                    "    role: member",
+                    "    group: internal",
+                    "    is_active: false",
+                    "    receives_digest: true",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        records = read_users_config(config_path)
+        self.assertEqual([record["email"] for record in records], ["owner@example.com", "member@example.com"])
+        self.assertEqual([record["user_group"] for record in records], ["internal", "internal"])
+
+        with database.SessionLocal() as db:
+            result = sync_users_from_config(db, config_path=config_path)
+            users = list(db.scalars(select(User).order_by(User.email.asc())))
+
+        self.assertEqual([user.email for user in result.created], ["owner@example.com", "member@example.com"])
+        self.assertEqual(result.recipients, ["owner@example.com"])
+        self.assertEqual([user.role for user in users], ["member", "admin"])
+        self.assertEqual([user.is_active for user in users], [False, True])
 
 
 if __name__ == "__main__":

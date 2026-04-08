@@ -14,58 +14,71 @@ if str(TOOLS_DIR) not in sys.path:
 
 from instance_paths import get_instance_paths
 
-INSTANCE_PATHS = get_instance_paths(PROJECT_ROOT)
-
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=str(INSTANCE_PATHS.backend_env_file),
-        env_file_encoding="utf-8",
         extra="ignore",
     )
 
     app_name: str = "Bio Literature Digest Web"
     api_prefix: str = "/api"
-    frontend_origin: str = "http://127.0.0.1:8601"
+    frontend_origin: str = "http://127.0.0.1:18001"
     session_cookie_name: str = "bio_digest_session"
     session_cookie_secure: bool = False
     session_ttl_hours: int = 24 * 14
     session_secret: str = "change-me"
-    email_login_ttl_hours: int = 24 * 7
     cst_timezone: str = "Asia/Shanghai"
-    web_base_url: str = "http://127.0.0.1:8601"
+    web_base_url: str = "http://127.0.0.1:18001"
     initial_admin_email: str = "admin@example.com"
-    initial_admin_password: str = "change-before-prod"
     initial_admin_name: str = "Admin"
     bootstrap_admin: bool = True
     page_size_default: int = 25
     page_size_max: int = 200
     export_inline_limit: int = Field(default=5000)
     data_retention_days: int = Field(default=30, ge=1)
-    database_url: str = f"sqlite:///{INSTANCE_PATHS.database_file}"
-    access_trace_dir: str = str(INSTANCE_PATHS.access_trace_dir)
-    review_export_dir: str = str(INSTANCE_PATHS.review_export_dir)
-    producer_root: str = str(INSTANCE_PATHS.producer_root)
-    producer_rules_path: str = str(INSTANCE_PATHS.producer_root / "references" / "category_rules.yaml")
-    producer_review_template_path: str = str(INSTANCE_PATHS.producer_root / "assets" / "email_template.html")
+    database_url: str = "sqlite:///./bio_digest_web.db"
+    shared_database_url: str = "sqlite:///./bio_literature_shared.db"
+    access_trace_dir: str = "access-traces"
+    review_export_dir: str = "review-tables"
+    producer_root: str = ""
+    producer_rules_path: str = ""
+    producer_review_template_path: str = ""
+
+
+def _resolve_path(raw_value: str, *, base_dir: Path) -> str:
+    if not raw_value:
+        return str(base_dir.resolve())
+    path = Path(raw_value)
+    if path.is_absolute():
+        return str(path.resolve())
+    return str((base_dir / path).resolve())
 
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    settings = Settings()
+    paths = get_instance_paths(PROJECT_ROOT)
+    settings = Settings(
+        _env_file=str(paths.backend_env_file),
+        _env_file_encoding="utf-8",
+    )
     if settings.database_url.startswith("sqlite:///./"):
         relative_path = settings.database_url.removeprefix("sqlite:///./")
-        settings.database_url = f"sqlite:///{(INSTANCE_PATHS.web_data_dir / relative_path).resolve()}"
-    for field_name, base_dir in (
-        ("access_trace_dir", INSTANCE_PATHS.web_data_dir),
-        ("review_export_dir", INSTANCE_PATHS.web_data_dir),
-        ("producer_root", PROJECT_ROOT),
-        ("producer_rules_path", PROJECT_ROOT),
-        ("producer_review_template_path", PROJECT_ROOT),
-    ):
-        raw_value = getattr(settings, field_name)
-        if not Path(raw_value).is_absolute():
-            setattr(settings, field_name, str((base_dir / raw_value).resolve()))
+        settings.database_url = f"sqlite:///{(paths.web_data_dir / relative_path).resolve()}"
+    if settings.shared_database_url.startswith("sqlite:///./"):
+        relative_path = settings.shared_database_url.removeprefix("sqlite:///./")
+        settings.shared_database_url = f"sqlite:///{(paths.shared_data_dir / relative_path).resolve()}"
+    settings.access_trace_dir = _resolve_path(settings.access_trace_dir, base_dir=paths.web_data_dir)
+    settings.review_export_dir = _resolve_path(settings.review_export_dir, base_dir=paths.web_data_dir)
+    settings.producer_root = _resolve_path(settings.producer_root, base_dir=paths.producer_root)
+    producer_root = Path(settings.producer_root)
+    settings.producer_rules_path = _resolve_path(
+        settings.producer_rules_path or "references/category_rules.yaml",
+        base_dir=producer_root,
+    )
+    settings.producer_review_template_path = _resolve_path(
+        settings.producer_review_template_path or "assets/email_template.html",
+        base_dir=producer_root,
+    )
     return settings
 
 

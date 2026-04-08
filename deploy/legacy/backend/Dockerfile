@@ -5,7 +5,6 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app /app/app
-COPY import_digest_run.py /app/import_digest_run.py
 COPY alembic.ini /app/alembic.ini
 COPY alembic /app/alembic
 

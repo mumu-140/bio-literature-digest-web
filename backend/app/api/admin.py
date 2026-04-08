@@ -6,8 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..deps import get_db, require_admin
 from ..models import Paper, PaperPush, User
-from ..schemas import PaperPushCreate, PaperPushRead, ResetPasswordRequest, UserCreate, UserRead, UserUpdate
-from ..security import hash_password
+from ..schemas import PaperPushCreate, PaperPushRead, UserCreate, UserRead, UserUpdate
 from ..services.audit import record_action
 from ..services.user_visibility import require_visible_target_user, visible_user_statement
 from ..services.user_sync import derive_display_name
@@ -30,7 +29,7 @@ def create_user(payload: UserCreate, current_user: User = Depends(require_admin)
     user = User(
         email=normalized_email,
         name=(payload.name or "").strip() or derive_display_name(normalized_email),
-        password_hash=hash_password(payload.password),
+        password_hash="passwordless",
         role=payload.role,
         user_group=resolved_group,
         owner_admin_user_id=current_user.id if resolved_group == "outsider" else None,
@@ -56,7 +55,7 @@ def create_user(payload: UserCreate, current_user: User = Depends(require_admin)
 @router.patch("/users/{user_id}", response_model=UserRead)
 def update_user(user_id: int, payload: UserUpdate, current_user: User = Depends(require_admin), db: Session = Depends(get_db)) -> User:
     user = require_visible_target_user(db, current_user, user_id)
-    for field in ("name", "role", "user_group", "owner_admin_user_id", "is_active", "must_change_password"):
+    for field in ("name", "role", "user_group", "owner_admin_user_id", "is_active"):
         value = getattr(payload, field)
         if value is not None:
             setattr(user, field, value)
@@ -73,30 +72,6 @@ def update_user(user_id: int, payload: UserUpdate, current_user: User = Depends(
         entity_type="user",
         entity_id=user.id,
         detail=payload.model_dump(exclude_none=True),
-    )
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-@router.post("/users/{user_id}/reset-password", response_model=UserRead)
-def reset_password(
-    user_id: int,
-    payload: ResetPasswordRequest,
-    current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-) -> User:
-    user = require_visible_target_user(db, current_user, user_id)
-    user.password_hash = hash_password(payload.password)
-    user.must_change_password = True
-    record_action(
-        db,
-        action_type="admin_reset_password",
-        actor_user_id=current_user.id,
-        target_user_id=user.id,
-        entity_type="user",
-        entity_id=user.id,
-        detail={"must_change_password": True},
     )
     db.commit()
     db.refresh(user)

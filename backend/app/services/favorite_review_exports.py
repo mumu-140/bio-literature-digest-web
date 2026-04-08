@@ -77,7 +77,7 @@ def normalize_review_field(value: str | None) -> str:
 
 
 def normalize_favorite_review_payload(
-    favorite: Favorite,
+    favorite: Any,
     *,
     review_interest_level: str,
     review_interest_tag: str,
@@ -85,6 +85,10 @@ def normalize_favorite_review_payload(
     review_final_category: str,
     reviewer_notes: str,
 ) -> dict[str, str]:
+    base_item = getattr(favorite, "paper", None) or getattr(favorite, "item", None)
+    base_interest_level = normalize_review_field(getattr(base_item, "interest_level", ""))
+    base_interest_tag = normalize_review_field(getattr(base_item, "interest_tag", ""))
+    base_category = normalize_review_field(getattr(base_item, "category", ""))
     normalized = {
         "review_interest_level": normalize_review_field(review_interest_level),
         "review_interest_tag": normalize_review_field(review_interest_tag),
@@ -92,11 +96,11 @@ def normalize_favorite_review_payload(
         "review_final_category": normalize_review_field(review_final_category),
         "reviewer_notes": normalize_review_field(reviewer_notes),
     }
-    if normalized["review_interest_level"] == favorite.paper.interest_level:
+    if normalized["review_interest_level"] == base_interest_level:
         normalized["review_interest_level"] = ""
-    if normalized["review_interest_tag"] == favorite.paper.interest_tag:
+    if normalized["review_interest_tag"] == base_interest_tag:
         normalized["review_interest_tag"] = ""
-    if normalized["review_final_category"] == favorite.paper.category:
+    if normalized["review_final_category"] == base_category:
         normalized["review_final_category"] = ""
     return normalized
 

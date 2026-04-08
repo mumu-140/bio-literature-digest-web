@@ -1,7 +1,9 @@
 # Bio Literature Digest Web 中文说明
 
-这是 [bio-literature-digest](https://github.com/mumu-140/BioPlant-literature-skills/edit/main/) 的网页端项目。  
-它不负责抓取和翻译文献，只负责导入生产端生成的 `digest.csv`、`digest.html`、`digest.xlsx`、`run_metadata.json`，并提供账户、收藏、统计、导出和审查汇总能力。
+这是 `bio-literature-digest` 的网页端项目。  
+它不负责抓取和翻译文献；生产端会把文献同步到共享数据库，web 端直接读取共享库，并把收藏、导出等文献动作写回共享库。
+
+当前认证模式为内部免密：仅需邮箱即可登录，不存在的邮箱会自动创建为 `member` 账户。
 
 ## 快速开始
 
@@ -27,8 +29,6 @@ npm install
 
 ```bash
 mkdir -p bio-literature-config/env/web
-cp bio-literature-config/paths.env.example \
-  bio-literature-config/paths.env
 cp bio-literature-config/env/web/backend.env.local.example \
   bio-literature-config/env/web/backend.env.local
 cp bio-literature-config/env/web/deploy.env.local.example \
@@ -40,7 +40,6 @@ cp bio-literature-config/env/web/deploy.env.local.example \
 - `DATABASE_URL`
 - `SESSION_SECRET`
 - `INITIAL_ADMIN_EMAIL`
-- `INITIAL_ADMIN_PASSWORD`
 - `WEB_BASE_URL`
 
 ### 4. 本地启动
@@ -50,33 +49,34 @@ cp bio-literature-config/env/web/deploy.env.local.example \
 ```bash
 cd backend
 . .venv/bin/activate
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8602
+uvicorn app.main:app --reload --host 127.0.0.1 --port 18002
 ```
 
 ```bash
 cd frontend
-npm run dev -- --host 127.0.0.1 --port 8601
+npm run dev -- --host 127.0.0.1 --port 18001
 ```
 
 然后访问：
 
-- 前端：`http://127.0.0.1:8601`
-- 后端健康检查：`http://127.0.0.1:8602/healthz`
+- 前端：`http://127.0.0.1:18001`
+- 后端健康检查：`http://127.0.0.1:18002/healthz`
 
 如果你要用与生产更接近的本机进程方式：
 
 ```bash
-./start-amt-web.sh
+./start.sh
 ```
 
-默认端口是：
+进程会使用 `bio-literature-config/env/web/deploy.env.local` 中的配置值，例如：
 
-- 前端：`127.0.0.1:8601`
-- 后端：`127.0.0.1:8602`
+- 前端：`FRONTEND_HOST:FRONTEND_PORT`
+- 后端：`BACKEND_HOST:BACKEND_PORT`
 
 本地启动脚本会直接起 Vite dev server，并把 `/api` 代理到后端，所以本机访问不会再出现“已登录但没有数据”。
 
-项目启动脚本会拒绝 `8000-8200` 端口段。
+如果设置了 `RESERVED_PORT_RANGE`，启动脚本会拒绝落在该保留区间内的端口。
+如果 `ENABLE_TUNNEL=true`，同一个启动脚本会一并拉起 Cloudflare Tunnel；默认值就是开启。
 
 ## Tunnel 可选
 
@@ -93,19 +93,13 @@ Tunnel 配置模板在：
 
 - `bio-literature-config/tunnel/web/config.yml`
 
-启动命令：
-
-```bash
-./start-amt-tunnel.sh
-```
-
 公网域名以你自己的配置为准，例如：
 
 - `https://app.example.com`
 
 ## 目录结构
 
-- `backend/`: FastAPI、数据库模型、导入 CLI、测试
+- `backend/`: FastAPI、数据库模型、测试
 - `frontend/`: React + Vite 前端
 - `deploy/`: 部署模板和 Tunnel 示例
 - `docs/`: 架构和部署说明
@@ -117,7 +111,6 @@ Tunnel 配置模板在：
 
 其中：
 
-- `bio-literature-config/paths.env` 负责声明实例目录布局
 - `bio-literature-config/env/web/backend.env.local` 是后端本地开发配置
 - `bio-literature-config/env/web/deploy.env.local` 是本机部署配置
 - `bio-literature-config/data/web/access-traces/` 是访问记录目录
@@ -144,19 +137,20 @@ Tunnel 配置模板在：
 
 ### `bio-literature-digest-web` 负责
 
-- 导入每日产物到数据库
+- 从共享数据库读取文献数据
 - 提供网页账户体系
 - 展示今日文献与历史文献
-- 管理收藏、推送、统计、导出
+- 管理收藏、推送、统计、导出（文献相关动作写入共享数据库）
 - 输出审查汇总表
 
 ### 自动联动链路
 
 1. `bio-literature-digest/scripts/run_digest.py` 生成每日产物  
 2. `bio-literature-digest/scripts/run_production_digest.py` 归档产物  
-3. 同一个生产脚本会调用 `bio-literature-digest-web/backend/import_digest_run.py` 导入 web 数据库  
-4. `bio-literature-digest/scripts/send_email.py` 会先通过 `paths.env` 找到 web 的 `backend.env.local`，再读取 `SESSION_SECRET` 给每个收件人生成免密专属登录链接  
-5. 用户从邮件进入网页端后，可继续收藏、修改标签和做个人操作
+3. `run_digest.py` 在导出前执行共享数据库同步步骤  
+4. 两端默认共享路径：`skills/bio-literature-digest/bio-literature-config/data/shared/bio_literature_shared.db`  
+5. web API 从共享库读写文献数据，不再依赖 web 端扫描归档  
+6. 用户从邮件进入网页端后，可继续收藏、修改标签和做个人操作
 
 这意味着：
 
@@ -164,14 +158,6 @@ Tunnel 配置模板在：
 - 如果生产脚本正常执行，邮件和网页日期应保持同步
 
 ## 常用命令
-
-### 导入某一天归档
-
-```bash
-cd backend
-. .venv/bin/activate
-python import_digest_run.py --run-dir /path/to/daily-run
-```
 
 ### 同步邮件收件人为 web 用户
 
@@ -206,6 +192,41 @@ python export_favorite_review_tables.py
 - `.runtime`
 - 访问记录
 - 审查导出结果
+
+## Harness
+
+统一验证入口：
+
+```bash
+python3 tools/run_harness.py
+```
+
+它会执行：
+
+- `python3 tools/resolve_instance_path.py`
+- `backend/.venv/bin/python -m unittest discover -s app/tests`
+- `frontend/` 下的 `npm run build`
+- `python3 tools/audit_open_source.py`
+
+## Linux DO 声明
+
+Linux DO 声明：本项目开源版本以 Linux 运维为默认基线（DO = Deployment Operator）。README 与示例配置中的域名、路径、账号均为占位示例，部署前必须替换为真实值。
+
+## Harness
+
+统一验证入口：
+
+```bash
+python3 tools/run_harness.py
+```
+
+它会执行：
+
+- `python3 tools/resolve_instance_path.py`
+- `backend/.venv/bin/python -m unittest discover -s app/tests`
+- `frontend/` 下的 `npm run build`
+- `python3 tools/audit_open_source.py`
+
 ---
 
 ## Acknowledgments

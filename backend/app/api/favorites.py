@@ -7,12 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from ..deps import get_current_user, get_db
-from ..models import Favorite, Paper, User
+from ..deps import get_current_user, get_db, get_shared_db
+from ..models import User
 from ..schemas import FavoriteCreate, FavoriteRead, FavoriteReviewOptions, FavoriteReviewUpdate
-from ..services.audit import record_action
 from ..services.favorite_review_exports import get_review_options, normalize_favorite_review_payload
 from ..services.user_visibility import require_visible_target_user
+from ..shared_models import SharedActionLog, SharedActor, SharedActorFavorite, SharedLiteratureItem
 
 router = APIRouter(prefix="/favorites", tags=["favorites"])
 
@@ -33,22 +33,58 @@ def resolve_target_user(current_user: User, requested_user_id: Optional[int], db
     return require_visible_target_user(db, current_user, requested_user_id)
 
 
-def serialize_favorite(favorite: Favorite) -> FavoriteRead:
-    first_entry = min((entry.digest_date for entry in favorite.paper.daily_entries), default=None)
+def ensure_shared_actor(shared_db: Session, user: User) -> SharedActor:
+    actor_key = user.email.lower()
+    actor = shared_db.scalar(select(SharedActor).where(SharedActor.actor_key == actor_key))
+    if actor is None:
+        actor = SharedActor(actor_key=actor_key, email=actor_key, display_name=user.name)
+        shared_db.add(actor)
+        shared_db.flush()
+    else:
+        actor.email = actor_key
+        actor.display_name = user.name
+    return actor
+
+
+def record_shared_action(
+    shared_db: Session,
+    *,
+    actor: SharedActor,
+    action_type: str,
+    entity_type: str,
+    entity_id: Optional[int],
+    detail: dict,
+) -> None:
+    shared_db.add(
+        SharedActionLog(
+            actor_id=actor.id,
+            action_type=action_type,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            detail_json=detail,
+        )
+    )
+
+
+def serialize_favorite(favorite: SharedActorFavorite) -> FavoriteRead:
+    first_entry = min(
+        (entry.digest_date for entry in favorite.item.memberships if entry.list_type == "digest"),
+        default=None,
+    )
     return FavoriteRead(
         id=favorite.id,
-        user_id=favorite.user_id,
-        paper_id=favorite.paper_id,
+        user_id=0,
+        paper_id=favorite.item_id,
         digest_date=str(first_entry) if first_entry else None,
-        doi=favorite.paper.doi,
-        journal=favorite.paper.journal,
-        publish_date=favorite.paper.publish_date,
-        category=favorite.paper.category,
-        interest_level=favorite.paper.interest_level,
-        interest_tag=favorite.paper.interest_tag,
-        title_en=favorite.paper.title_en,
-        title_zh=favorite.paper.title_zh,
-        article_url=favorite.paper.article_url,
+        doi=favorite.item.doi,
+        journal=favorite.item.journal,
+        publish_date=favorite.item.publish_date,
+        category=favorite.item.category,
+        interest_level=favorite.item.interest_level,
+        interest_tag=favorite.item.interest_tag,
+        title_en=favorite.item.title_en,
+        title_zh=favorite.item.title_zh,
+        article_url=favorite.item.article_url,
         favorited_at=favorite.favorited_at,
         review_interest_level=favorite.review_interest_level,
         review_interest_tag=favorite.review_interest_tag,
@@ -70,17 +106,22 @@ def list_favorites(
     user_id: Optional[int] = Query(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    shared_db: Session = Depends(get_shared_db),
 ) -> list[FavoriteRead]:
     target_user = resolve_target_user(current_user, user_id, db)
+    actor = ensure_shared_actor(shared_db, target_user)
     statement = (
-        select(Favorite)
-        .options(joinedload(Favorite.paper).joinedload(Paper.daily_entries))
-        .where(Favorite.user_id == target_user.id)
-        .order_by(Favorite.favorited_at.desc())
+        select(SharedActorFavorite)
+        .options(joinedload(SharedActorFavorite.item).joinedload(SharedLiteratureItem.memberships))
+        .where(SharedActorFavorite.actor_id == actor.id)
+        .order_by(SharedActorFavorite.favorited_at.desc())
     )
-    items = list(db.execute(statement).unique().scalars())
+    items = list(shared_db.execute(statement).unique().scalars())
     items.sort(key=lambda favorite: favorite.review_updated_at or favorite.favorited_at, reverse=True)
-    return [serialize_favorite(favorite) for favorite in items]
+    rows = [serialize_favorite(favorite) for favorite in items]
+    for row in rows:
+        row.user_id = target_user.id
+    return rows
 
 
 @router.post("", response_model=FavoriteRead, status_code=status.HTTP_201_CREATED)
@@ -88,37 +129,47 @@ def create_favorite(
     payload: FavoriteCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    shared_db: Session = Depends(get_shared_db),
 ) -> FavoriteRead:
     target_user = resolve_target_user(current_user, payload.user_id, db)
-    paper = db.get(Paper, payload.paper_id)
-    if paper is None:
+    actor = ensure_shared_actor(shared_db, target_user)
+    item = shared_db.get(SharedLiteratureItem, payload.paper_id)
+    if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
-    existing = db.scalar(select(Favorite).where(Favorite.user_id == target_user.id, Favorite.paper_id == paper.id))
-    if existing:
-        favorite = db.execute(
-            select(Favorite)
-            .options(joinedload(Favorite.paper).joinedload(Paper.daily_entries))
-            .where(Favorite.id == existing.id)
-        ).unique().scalar_one()
-        return serialize_favorite(favorite)
-    favorite = Favorite(user_id=target_user.id, paper_id=paper.id)
-    db.add(favorite)
-    record_action(
-        db,
-        action_type="favorite_add",
-        actor_user_id=current_user.id,
-        target_user_id=target_user.id,
-        entity_type="paper",
-        entity_id=paper.id,
-        detail={"canonical_key": paper.canonical_key},
+    existing = shared_db.scalar(
+        select(SharedActorFavorite).where(
+            SharedActorFavorite.actor_id == actor.id,
+            SharedActorFavorite.item_id == item.id,
+        )
     )
-    db.commit()
-    favorite = db.execute(
-        select(Favorite)
-        .options(joinedload(Favorite.paper).joinedload(Paper.daily_entries))
-        .where(Favorite.id == favorite.id)
+    if existing:
+        favorite = shared_db.execute(
+            select(SharedActorFavorite)
+            .options(joinedload(SharedActorFavorite.item).joinedload(SharedLiteratureItem.memberships))
+            .where(SharedActorFavorite.id == existing.id)
+        ).unique().scalar_one()
+        row = serialize_favorite(favorite)
+        row.user_id = target_user.id
+        return row
+    favorite = SharedActorFavorite(actor_id=actor.id, item_id=item.id)
+    shared_db.add(favorite)
+    record_shared_action(
+        shared_db,
+        actor=actor,
+        action_type="favorite_add",
+        entity_type="paper",
+        entity_id=item.id,
+        detail={"canonical_key": item.canonical_key, "target_user_id": target_user.id},
+    )
+    shared_db.commit()
+    favorite = shared_db.execute(
+        select(SharedActorFavorite)
+        .options(joinedload(SharedActorFavorite.item).joinedload(SharedLiteratureItem.memberships))
+        .where(SharedActorFavorite.id == favorite.id)
     ).unique().scalar_one()
-    return serialize_favorite(favorite)
+    row = serialize_favorite(favorite)
+    row.user_id = target_user.id
+    return row
 
 
 @router.patch("/{paper_id}", response_model=FavoriteRead)
@@ -128,12 +179,17 @@ def update_favorite_review(
     user_id: Optional[int] = Query(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    shared_db: Session = Depends(get_shared_db),
 ) -> FavoriteRead:
     target_user = resolve_target_user(current_user, user_id, db)
-    favorite = db.execute(
-        select(Favorite)
-        .options(joinedload(Favorite.paper).joinedload(Paper.daily_entries))
-        .where(Favorite.user_id == target_user.id, Favorite.paper_id == paper_id)
+    actor = ensure_shared_actor(shared_db, target_user)
+    favorite = shared_db.execute(
+        select(SharedActorFavorite)
+        .options(joinedload(SharedActorFavorite.item).joinedload(SharedLiteratureItem.memberships))
+        .where(
+            SharedActorFavorite.actor_id == actor.id,
+            SharedActorFavorite.item_id == paper_id,
+        )
     ).unique().scalar_one_or_none()
     if favorite is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Favorite not found")
@@ -151,23 +207,25 @@ def update_favorite_review(
     favorite.review_final_category = normalized["review_final_category"]
     favorite.reviewer_notes = normalized["reviewer_notes"]
     favorite.review_updated_at = datetime.utcnow() if any(normalized.values()) else None
-    record_action(
-        db,
+    record_shared_action(
+        shared_db,
+        actor=actor,
         action_type="favorite_review_update",
-        actor_user_id=current_user.id,
-        target_user_id=target_user.id,
         entity_type="paper",
-        entity_id=favorite.paper_id,
+        entity_id=favorite.item_id,
         detail={
             "review_interest_level": favorite.review_interest_level,
             "review_interest_tag": favorite.review_interest_tag,
             "review_final_decision": favorite.review_final_decision,
             "review_final_category": favorite.review_final_category,
             "has_notes": bool(favorite.reviewer_notes),
+            "target_user_id": target_user.id,
         },
     )
-    db.commit()
-    return serialize_favorite(favorite)
+    shared_db.commit()
+    row = serialize_favorite(favorite)
+    row.user_id = target_user.id
+    return row
 
 
 @router.delete("/{paper_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -176,19 +234,25 @@ def delete_favorite(
     user_id: Optional[int] = Query(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    shared_db: Session = Depends(get_shared_db),
 ) -> None:
     target_user = resolve_target_user(current_user, user_id, db)
-    favorite = db.scalar(select(Favorite).where(Favorite.user_id == target_user.id, Favorite.paper_id == paper_id))
+    actor = ensure_shared_actor(shared_db, target_user)
+    favorite = shared_db.scalar(
+        select(SharedActorFavorite).where(
+            SharedActorFavorite.actor_id == actor.id,
+            SharedActorFavorite.item_id == paper_id,
+        )
+    )
     if favorite is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Favorite not found")
-    record_action(
-        db,
+    record_shared_action(
+        shared_db,
+        actor=actor,
         action_type="favorite_remove",
-        actor_user_id=current_user.id,
-        target_user_id=target_user.id,
         entity_type="paper",
-        entity_id=favorite.paper_id,
-        detail={},
+        entity_id=favorite.item_id,
+        detail={"target_user_id": target_user.id},
     )
-    db.delete(favorite)
-    db.commit()
+    shared_db.delete(favorite)
+    shared_db.commit()

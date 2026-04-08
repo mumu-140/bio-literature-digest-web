@@ -22,7 +22,6 @@ services:
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN}
       WEB_BASE_URL: ${WEB_BASE_URL}
       INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL}
-      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD}
     depends_on:
       db:
         condition: service_healthy

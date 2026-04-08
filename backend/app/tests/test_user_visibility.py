@@ -14,9 +14,10 @@ class UserVisibilityTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmpdir = tempfile.TemporaryDirectory(prefix="bio-digest-web-visibility-")
         db_path = Path(self.tmpdir.name) / "visibility.db"
+        shared_db_path = Path(self.tmpdir.name) / "shared.db"
         os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
+        os.environ["SHARED_DATABASE_URL"] = f"sqlite:///{shared_db_path}"
         os.environ["INITIAL_ADMIN_EMAIL"] = "primary-admin@example.com"
-        os.environ["INITIAL_ADMIN_PASSWORD"] = "ChangeMe123!"
         os.environ["ACCESS_TRACE_DIR"] = str(Path(self.tmpdir.name) / "access-traces")
         reset_settings_cache()
         from app.main import create_app
@@ -25,37 +26,37 @@ class UserVisibilityTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.tmpdir.cleanup()
-        for key in ("DATABASE_URL", "INITIAL_ADMIN_EMAIL", "INITIAL_ADMIN_PASSWORD", "ACCESS_TRACE_DIR"):
+        for key in ("DATABASE_URL", "SHARED_DATABASE_URL", "INITIAL_ADMIN_EMAIL", "ACCESS_TRACE_DIR"):
             os.environ.pop(key, None)
         reset_settings_cache()
 
-    def _login(self, email: str, password: str) -> dict[str, str]:
-        response = self.client.post("/api/auth/login", json={"email": email, "password": password})
+    def _login(self, email: str) -> dict[str, str]:
+        response = self.client.post("/api/auth/login", json={"email": email})
         self.assertEqual(response.status_code, 200)
         return response.cookies
 
     def test_outsider_user_visible_only_to_owner_admin(self) -> None:
         with TestClient(self.app_factory()) as client:
             self.client = client
-            primary = self._login("primary-admin@example.com", "ChangeMe123!")
+            primary = self._login("primary-admin@example.com")
 
             create_admin = self.client.post(
                 "/api/admin/users",
-                json={"email": "secondary-admin@example.com", "name": "", "password": "ChangeMe123!", "role": "admin", "user_group": "internal"},
+                json={"email": "secondary-admin@example.com", "name": "", "role": "admin", "user_group": "internal"},
                 cookies=primary,
             )
             self.assertEqual(create_admin.status_code, 201)
 
             create_outsider = self.client.post(
                 "/api/admin/users",
-                json={"email": "outsider@example.com", "name": "", "password": "ChangeMe123!", "role": "member", "user_group": "outsider"},
+                json={"email": "outsider@example.com", "name": "", "role": "member", "user_group": "outsider"},
                 cookies=primary,
             )
             self.assertEqual(create_outsider.status_code, 201)
             outsider_id = create_outsider.json()["id"]
             self.assertEqual(create_outsider.json()["owner_admin_user_id"], 1)
 
-            secondary = self._login("secondary-admin@example.com", "ChangeMe123!")
+            secondary = self._login("secondary-admin@example.com")
 
             visible_to_primary = self.client.get("/api/admin/users", cookies=primary)
             self.assertEqual(visible_to_primary.status_code, 200)
@@ -65,12 +66,12 @@ class UserVisibilityTest(unittest.TestCase):
             self.assertEqual(visible_to_secondary.status_code, 200)
             self.assertNotIn("outsider@example.com", [user["email"] for user in visible_to_secondary.json()])
 
-            hidden_reset = self.client.post(
-                f"/api/admin/users/{outsider_id}/reset-password",
-                json={"password": "AnotherPass123!"},
+            hidden_update = self.client.patch(
+                f"/api/admin/users/{outsider_id}",
+                json={"is_active": False},
                 cookies=secondary,
             )
-            self.assertEqual(hidden_reset.status_code, 404)
+            self.assertEqual(hidden_update.status_code, 404)
 
 
 if __name__ == "__main__":

@@ -1,8 +1,7 @@
 # Bio Literature Config
 
-本目录是 `bio-literature-digest-web` 的实例目录，专门放可变路径、真实配置和运行数据。
+本目录是 `bio-literature-digest-web` 的实例目录，专门放真实配置和运行数据。
 
-- `paths.env`: 实例目录布局定义，脚本优先从这里解析路径
 - `env/producer/`: 供 `bio-literature-digest` 读取的邮箱、翻译和样式本地配置
 - `env/web/backend.env.local`: web 后端本地开发配置
 - `env/web/deploy.env.local`: web 本机进程和 Tunnel 部署配置
@@ -29,7 +28,8 @@
 
 说明：
 
-- `paths.env` 是唯一需要维护的实例路径入口，后续即使移动目录，也只改这一处
-- `env/web/backend.env.local` 对应直接运行后端的本地开发配置，默认前端是 `http://127.0.0.1:8601`
-- `env/web/deploy.env.local` 供 `start-amt-web.sh` 和邮件链接生成使用
+- `env/web/backend.env.local` 对应直接运行后端的本地开发配置，前端来源由 `FRONTEND_ORIGIN` 指定
+- `env/web/backend.env.local` 里的 `PRODUCER_ROOT` 可显式指定只读归档来源
+- `env/web/deploy.env.local` 供 `start.sh` 和邮件链接生成使用，也控制是否自动拉起补采集 worker 与 tunnel
 - `data/web/` 与 `runtime/web/` 都是运行期目录，不应该进入 GitHub
+- 旧副本里如果还有 `paths.env`，现在已经只是兼容遗留物，脚本不再依赖它

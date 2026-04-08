@@ -9,10 +9,10 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app import database
+from app import database, shared_database
 from app.config import reset_settings_cache
 from app.models import DigestRun, Favorite, Paper, PaperDailyEntry, User
-from app.security import hash_password
+from app.shared_models import SharedDigestMembership, SharedDigestRun, SharedLiteratureItem
 from app.services.favorite_review_exports import build_user_review_records, build_weighted_review_records
 
 
@@ -20,9 +20,10 @@ class FavoriteReviewTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmpdir = tempfile.TemporaryDirectory(prefix="bio-digest-web-favorite-review-")
         db_path = Path(self.tmpdir.name) / "api.db"
+        shared_db_path = Path(self.tmpdir.name) / "shared.db"
         os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
+        os.environ["SHARED_DATABASE_URL"] = f"sqlite:///{shared_db_path}"
         os.environ["INITIAL_ADMIN_EMAIL"] = "admin@example.com"
-        os.environ["INITIAL_ADMIN_PASSWORD"] = "ChangeMe123!"
         os.environ["REVIEW_EXPORT_DIR"] = str(Path(self.tmpdir.name) / "review-tables")
         reset_settings_cache()
         from app.main import create_app
@@ -32,12 +33,12 @@ class FavoriteReviewTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmpdir.cleanup()
         os.environ.pop("DATABASE_URL", None)
+        os.environ.pop("SHARED_DATABASE_URL", None)
         os.environ.pop("INITIAL_ADMIN_EMAIL", None)
-        os.environ.pop("INITIAL_ADMIN_PASSWORD", None)
         os.environ.pop("REVIEW_EXPORT_DIR", None)
         reset_settings_cache()
 
-    def _seed_paper(self) -> int:
+    def _seed_local_paper(self) -> int:
         with database.SessionLocal() as db:
             digest_run = DigestRun(digest_date=date.fromisoformat("2026-04-06"), work_dir=str(Path(self.tmpdir.name) / "run"))
             db.add(digest_run)
@@ -78,11 +79,57 @@ class FavoriteReviewTest(unittest.TestCase):
             db.commit()
             return paper.id
 
+    def _seed_shared_paper(self) -> int:
+        with shared_database.SharedSessionLocal() as db:
+            digest_run = SharedDigestRun(
+                digest_date=date.fromisoformat("2026-04-06"),
+                run_dir=str(Path(self.tmpdir.name) / "run"),
+            )
+            db.add(digest_run)
+            db.flush()
+            paper = SharedLiteratureItem(
+                canonical_key="doi:10.1000/review-favorite",
+                doi="10.1000/review-favorite",
+                canonical_url="https://example.org/review-favorite",
+                journal="Nature",
+                category="omics",
+                publish_date="2026-04-06T00:01:00Z",
+                interest_level="感兴趣",
+                interest_score=4,
+                interest_tag="组学",
+                title_en="Reviewable shared title",
+                title_zh="可审核共享标题",
+                summary_zh="摘要",
+                abstract="abstract",
+                article_url="https://example.org/review-favorite",
+                tags_json=["omics", "plant"],
+            )
+            db.add(paper)
+            db.flush()
+            db.add(
+                SharedDigestMembership(
+                    digest_run_id=digest_run.id,
+                    item_id=paper.id,
+                    digest_date=date.fromisoformat("2026-04-06"),
+                    list_type="digest",
+                    publication_stage="journal",
+                    row_index=1,
+                    source_record_json={
+                        "source_id": "nature",
+                        "llm_decision": "keep",
+                        "llm_confidence": "0.91",
+                        "llm_reason": "top journal",
+                    },
+                )
+            )
+            db.commit()
+            return paper.id
+
     def test_patch_favorite_review_updates_review_fields(self) -> None:
         with TestClient(self.app_factory()) as client:
-            login = client.post("/api/auth/login", json={"email": "admin@example.com", "password": "ChangeMe123!"})
+            login = client.post("/api/auth/login", json={"email": "admin@example.com"})
             self.assertEqual(login.status_code, 200)
-            paper_id = self._seed_paper()
+            paper_id = self._seed_shared_paper()
             create_favorite = client.post("/api/favorites", json={"paper_id": paper_id})
             self.assertEqual(create_favorite.status_code, 201)
 
@@ -107,28 +154,26 @@ class FavoriteReviewTest(unittest.TestCase):
 
     def test_weighted_records_prefer_admin_vote_over_outsider(self) -> None:
         with TestClient(self.app_factory()) as client:
-            login = client.post("/api/auth/login", json={"email": "admin@example.com", "password": "ChangeMe123!"})
+            login = client.post("/api/auth/login", json={"email": "admin@example.com"})
             self.assertEqual(login.status_code, 200)
-            paper_id = self._seed_paper()
+            paper_id = self._seed_local_paper()
 
             with database.SessionLocal() as db:
                 member = User(
                     email="member@example.com",
                     name="member",
-                    password_hash=hash_password("ChangeMe123!"),
+                    password_hash="passwordless",
                     role="member",
                     is_active=True,
-                    must_change_password=False,
                 )
                 outsider = User(
                     email="outsider@example.com",
                     name="outsider",
-                    password_hash=hash_password("ChangeMe123!"),
+                    password_hash="passwordless",
                     role="member",
                     user_group="outsider",
                     owner_admin_user_id=1,
                     is_active=True,
-                    must_change_password=False,
                 )
                 db.add_all([member, outsider])
                 db.flush()

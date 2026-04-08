@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.acceptme.amt-bio-digest-tunnel</string>
+  <string>com.example.bio-digest-web-tunnel</string>
 
   <key>ProgramArguments</key>
   <array>
-    <string>/opt/homebrew/bin/cloudflared</string>
+    <string>/PATH/TO/cloudflared</string>
     <string>tunnel</string>
     <string>--config</string>
     <string>/ABSOLUTE/PATH/TO/bio-literature-digest-web/bio-literature-config/tunnel/web/config.yml</string>
@@ -24,9 +24,9 @@
   <string>/ABSOLUTE/PATH/TO/bio-literature-digest-web</string>
 
   <key>StandardOutPath</key>
-  <string>/ABSOLUTE/PATH/TO/bio-literature-digest-web/bio-literature-config/runtime/web/amt-bio-digest-tunnel.log</string>
+  <string>/ABSOLUTE/PATH/TO/bio-literature-digest-web/bio-literature-config/runtime/web/bio-digest-web-tunnel.log</string>
 
   <key>StandardErrorPath</key>
-  <string>/ABSOLUTE/PATH/TO/bio-literature-digest-web/bio-literature-config/runtime/web/amt-bio-digest-tunnel.log</string>
+  <string>/ABSOLUTE/PATH/TO/bio-literature-digest-web/bio-literature-config/runtime/web/bio-digest-web-tunnel.log</string>
 </dict>
 </plist>
