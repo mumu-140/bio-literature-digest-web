@@ -7,6 +7,7 @@ BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/frontend"
 PATH_RESOLVER="$ROOT_DIR/tools/resolve_instance_path.py"
 DETACHER="$ROOT_DIR/tools/launch_detached.py"
+ENABLE_TUNNEL_OVERRIDE="${ENABLE_TUNNEL-}"
 eval "$(/usr/bin/python3 "$PATH_RESOLVER" --shell)"
 
 RUNTIME_DIR="$WEB_RUNTIME_DIR"
@@ -17,6 +18,7 @@ TUNNEL_PID_FILE="$RUNTIME_DIR/tunnel.pid"
 BACKEND_LOG="$RUNTIME_DIR/backend.log"
 FRONTEND_LOG="$RUNTIME_DIR/frontend.log"
 TUNNEL_LOG="$RUNTIME_DIR/tunnel.log"
+BACKEND_PYTHON="$BACKEND_DIR/.venv/bin/python"
 BACKEND_UVICORN="$BACKEND_DIR/.venv/bin/uvicorn"
 TUNNEL_CONFIG_FILE="$WEB_TUNNEL_CONFIG_FILE"
 CLOUDFLARED_BIN="${CLOUDFLARED_BIN:-}"
@@ -51,6 +53,10 @@ fi
 set -a
 source "$CONFIG_FILE"
 set +a
+
+if [[ -n "$ENABLE_TUNNEL_OVERRIDE" ]]; then
+  ENABLE_TUNNEL="$ENABLE_TUNNEL_OVERRIDE"
+fi
 
 require_env() {
   local key="$1"

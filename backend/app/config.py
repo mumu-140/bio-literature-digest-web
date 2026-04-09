@@ -36,8 +36,8 @@ class Settings(BaseSettings):
     page_size_max: int = 200
     export_inline_limit: int = Field(default=5000)
     data_retention_days: int = Field(default=30, ge=1)
+    producer_sync_enabled: bool = True
     database_url: str = "sqlite:///./bio_digest_web.db"
-    shared_database_url: str = "sqlite:///./bio_literature_shared.db"
     access_trace_dir: str = "access-traces"
     review_export_dir: str = "review-tables"
     producer_root: str = ""
@@ -54,6 +54,16 @@ def _resolve_path(raw_value: str, *, base_dir: Path) -> str:
     return str((base_dir / path).resolve())
 
 
+def _resolve_existing_path(raw_value: str, *, base_dir: Path, fallbacks: list[str]) -> str:
+    candidates = [raw_value, *fallbacks] if raw_value else list(fallbacks)
+    for candidate in candidates:
+        resolved = Path(_resolve_path(candidate, base_dir=base_dir))
+        if resolved.exists():
+            return str(resolved)
+    primary = raw_value or (fallbacks[0] if fallbacks else "")
+    return _resolve_path(primary, base_dir=base_dir)
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     paths = get_instance_paths(PROJECT_ROOT)
@@ -64,16 +74,17 @@ def get_settings() -> Settings:
     if settings.database_url.startswith("sqlite:///./"):
         relative_path = settings.database_url.removeprefix("sqlite:///./")
         settings.database_url = f"sqlite:///{(paths.web_data_dir / relative_path).resolve()}"
-    if settings.shared_database_url.startswith("sqlite:///./"):
-        relative_path = settings.shared_database_url.removeprefix("sqlite:///./")
-        settings.shared_database_url = f"sqlite:///{(paths.shared_data_dir / relative_path).resolve()}"
     settings.access_trace_dir = _resolve_path(settings.access_trace_dir, base_dir=paths.web_data_dir)
     settings.review_export_dir = _resolve_path(settings.review_export_dir, base_dir=paths.web_data_dir)
     settings.producer_root = _resolve_path(settings.producer_root, base_dir=paths.producer_root)
     producer_root = Path(settings.producer_root)
-    settings.producer_rules_path = _resolve_path(
-        settings.producer_rules_path or "references/category_rules.yaml",
+    settings.producer_rules_path = _resolve_existing_path(
+        settings.producer_rules_path,
         base_dir=producer_root,
+        fallbacks=[
+            "references/category_rules.yaml",
+            "config/content/category_rules.yaml",
+        ],
     )
     settings.producer_review_template_path = _resolve_path(
         settings.producer_review_template_path or "assets/email_template.html",

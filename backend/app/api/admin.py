@@ -5,8 +5,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..deps import get_db, require_admin
-from ..models import Paper, PaperPush, User
-from ..schemas import PaperPushCreate, PaperPushRead, UserCreate, UserRead, UserUpdate
+from ..integrations.producer_import.service import ImportStatusError, check_and_import_latest_runs, import_run_by_id, list_run_statuses
+from ..models import ImportedLiteratureItem, LiteraturePushV2, User
+from ..schemas import ImportResult, ImportRunRead, PaperPushCreate, PaperPushRead, UserCreate, UserRead, UserUpdate
 from ..services.audit import record_action
 from ..services.user_visibility import require_visible_target_user, visible_user_statement
 from ..services.user_sync import derive_display_name
@@ -78,6 +79,47 @@ def update_user(user_id: int, payload: UserUpdate, current_user: User = Depends(
     return user
 
 
+@router.get("/imports/runs", response_model=list[ImportRunRead])
+def list_import_runs(current_user: User = Depends(require_admin), db: Session = Depends(get_db)) -> list[ImportRunRead]:
+    _ = current_user
+    return [ImportRunRead(**run.__dict__) for run in list_run_statuses(db)]
+
+
+@router.post("/imports/check", response_model=list[ImportResult])
+def check_import_runs(current_user: User = Depends(require_admin), db: Session = Depends(get_db)) -> list[ImportResult]:
+    _ = current_user
+    results = check_and_import_latest_runs(db, trigger="manual")
+    return [ImportResult(**result.__dict__) for result in results]
+
+
+@router.post("/imports/runs/{run_id}/import", response_model=ImportResult)
+def import_producer_run(
+    run_id: str,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> ImportResult:
+    _ = current_user
+    try:
+        result = import_run_by_id(db, run_id=run_id, trigger="manual", force=False)
+    except ImportStatusError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return ImportResult(**result.__dict__)
+
+
+@router.post("/imports/runs/{run_id}/reimport", response_model=ImportResult)
+def reimport_producer_run(
+    run_id: str,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> ImportResult:
+    _ = current_user
+    try:
+        result = import_run_by_id(db, run_id=run_id, trigger="reimport", force=True)
+    except ImportStatusError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return ImportResult(**result.__dict__)
+
+
 @router.post("/pushes", response_model=PaperPushRead, status_code=status.HTTP_201_CREATED)
 def push_paper_to_user(
     payload: PaperPushCreate,
@@ -85,16 +127,18 @@ def push_paper_to_user(
     db: Session = Depends(get_db),
 ) -> PaperPushRead:
     recipient = require_visible_target_user(db, admin_user, payload.recipient_user_id)
-    paper = db.get(Paper, payload.paper_id)
+    paper = db.get(ImportedLiteratureItem, payload.paper_id)
     if paper is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
-    push = PaperPush(
-        paper_id=paper.id,
+    push = LiteraturePushV2(
+        literature_item_id=paper.id,
+        literature_item_key=paper.literature_item_key,
         recipient_user_id=recipient.id,
         sent_by_user_id=admin_user.id,
         note=payload.note.strip(),
     )
     db.add(push)
+    db.flush()
     record_action(
         db,
         action_type="admin_push_paper",
@@ -102,13 +146,14 @@ def push_paper_to_user(
         target_user_id=recipient.id,
         entity_type="paper",
         entity_id=paper.id,
-        detail={"note": payload.note.strip()},
+        detail={"note": payload.note.strip(), "canonical_key": paper.literature_item_key},
     )
     db.commit()
     db.refresh(push)
     return PaperPushRead(
         id=push.id,
         paper_id=paper.id,
+        canonical_key=paper.literature_item_key,
         recipient_user_id=recipient.id,
         sent_by_user_id=admin_user.id,
         note=push.note,

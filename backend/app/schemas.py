@@ -55,10 +55,12 @@ class LoginResponse(BaseModel):
 
 class DigestPaper(BaseModel):
     id: int
+    canonical_key: str
     digest_date: str
     doi: str
     journal: str
     publish_date: str
+    publish_date_day: str
     category: str
     interest_level: str
     interest_score: int
@@ -80,6 +82,27 @@ class PaginatedPapers(BaseModel):
     page_size: int
 
 
+class PaperLibraryGroupSummary(BaseModel):
+    publish_date: str
+    paper_count: int
+
+
+class PaperLibraryGroup(BaseModel):
+    publish_date: str
+    paper_count: int
+    items: list[DigestPaper]
+
+
+class PaperLibraryOverview(BaseModel):
+    total_papers: int
+    available_publish_dates: list[str]
+    available_categories: list[str]
+    available_tags: list[str]
+    groups: list[PaperLibraryGroupSummary]
+    loaded_groups: list[PaperLibraryGroup]
+    sort: str
+
+
 class FavoriteCreate(BaseModel):
     paper_id: int
     user_id: Optional[int] = None
@@ -89,6 +112,7 @@ class FavoriteRead(BaseModel):
     id: int
     user_id: int
     paper_id: int
+    canonical_key: str
     digest_date: Optional[str] = None
     doi: str
     journal: str
@@ -134,6 +158,7 @@ class PaperPushCreate(BaseModel):
 class PaperPushRead(BaseModel):
     id: int
     paper_id: int
+    canonical_key: str
     recipient_user_id: int
     sent_by_user_id: int
     note: str
@@ -151,35 +176,6 @@ class PaperPushRead(BaseModel):
 
 class PaperPushUpdate(BaseModel):
     is_read: bool
-
-
-class AnalyticsNodeRead(BaseModel):
-    key: str
-    label: str
-    weight: int
-
-
-class AnalyticsEdgeRead(BaseModel):
-    source: str
-    target: str
-    weight: int
-
-
-class TrendPoint(BaseModel):
-    label: str
-    value: int
-    journal: Optional[str] = None
-
-
-class AnalyticsResponse(BaseModel):
-    scope_type: str
-    period: str
-    month: str
-    total_papers: int
-    nodes: list[AnalyticsNodeRead]
-    edges: list[AnalyticsEdgeRead]
-    series: list[TrendPoint]
-    summary: dict[str, Any]
 
 
 class ExportColumnMapping(BaseModel):
@@ -207,6 +203,29 @@ class ExportJobRead(BaseModel):
 
 
 class ImportResult(BaseModel):
-    digest_run_id: int
     digest_date: str
-    imported_papers: int
+    source_run_id: str
+    source_updated_at_utc: str
+    result_status: str
+    imported_items: int
+    imported_memberships: int
+    skipped_missing_key_count: int
+    duplicate_membership_count: int
+    conflict_count: int
+    validation_status: str
+    summary: dict[str, Any]
+
+
+class ImportRunRead(BaseModel):
+    digest_date: str
+    run_id: str
+    updated_at_utc: str
+    status: str
+    email_status: str
+    work_dir: str
+    validation_status: str
+    validation_payload: dict[str, Any]
+    record_count: int
+    is_current: bool
+    current_local_run_id: str
+    current_local_updated_at_utc: str

@@ -1,33 +1,71 @@
 # Architecture
 
-## Producer / Consumer Split
+## Producer / Consumer Boundary
 
-- `bio-literature-digest` remains the producer of `digest.csv`, `digest.xlsx`, `digest.html`, and `run_metadata.json`.
-- `bio-literature-digest` also writes normalized literature data into a shared database.
-- `bio-literature-digest-web` consumes the shared database directly for literature reads and literature-related writes (favorites, exports).
-- `bio-literature-digest-web/bio-literature-config/` is the live local-only instance root for the web project.
-- The web project resolves its runtime paths directly from the project root:
-  - `bio-literature-config/env/web`
-  - `bio-literature-config/data/web`
-  - `bio-literature-config/runtime/web`
-  - `bio-literature-config/tunnel/web`
-- The producer side is resolved as the sibling project `../bio-literature-digest`, with archives under `../bio-literature-digest/archives/daily-digests`.
+- `bio-literature-digest` is the only producer of literature content.
+- Producer SQLite and producer archives are source inputs only.
+- `bio-literature-digest-web` imports producer runs into its own local operational database.
+- The web UI never reads producer SQLite or producer archives directly.
 
-## Core Entities
+## Local Operational Data Plane
 
-- `users`: local login accounts with `admin` or `member` role.
-- `sessions`: HttpOnly cookie-backed sessions.
-- Local DB: `users`, `sessions`, and local operational records.
-- Shared DB: `shared_literature_items`, `shared_digest_runs`, `shared_digest_memberships`, `shared_actor_favorites`, `shared_export_jobs`.
-- `analytics_snapshots`, `analytics_nodes`, `analytics_edges`: persisted network graph materializations.
-- `export_jobs`: generated downloads for metadata, DOI lists, and custom tables.
-- `bio-literature-config/data/web/access-traces`: append-only per-user entry traces.
-- `bio-literature-config/data/web/review-tables`: delayed review export output, including weighted aggregate sheets.
+Primary web-side tables:
 
-## Runtime Flow
+- `users`
+- `sessions`
+- `imported_literature_items`
+- `imported_digest_runs`
+- `imported_digest_memberships`
+- `producer_import_ledger`
+- `user_literature_favorites`
+- `user_manual_reviews`
+- `user_export_jobs_v2`
+- `literature_pushes_v2`
+- `action_logs`
 
-1. Producer finishes a daily run.
-2. Producer writes normalized literature and digest memberships into the shared database.
-3. Web backend reads paper/digest lists from shared tables.
-4. Web favorites and exports are persisted in shared tables.
-5. Users log into the configured public hostname, browse daily papers, favorite records, run exports, and inspect analytics.
+These tables are the supported runtime surface for reading, favorites, manual review, exports, pushes, and import auditability.
+
+## Canonical Identity
+
+- Literature item key: producer `papers.unique_key`
+- Digest membership key: `(digest_date, list_type, literature_item_key)`
+- Favorite key: `(user_id, literature_item_key)`
+- Manual review key: `(user_id, literature_item_key)`
+
+Missing `unique_key` rows are skipped and logged. Re-import replaces memberships for the target digest date but preserves favorites and manual review attached to the same literature key.
+
+## Import Flow
+
+1. Read producer SQLite runs and paper records.
+2. Choose the latest usable run per digest date by `updated_at_utc`.
+3. Import immediately from SQLite when the run is usable.
+4. Validate archive/export artifacts when present without blocking import.
+5. Upsert local literature items and replace local memberships for that digest date.
+6. Record the result in `producer_import_ledger` and `action_logs`.
+
+Startup keeps one import check. Admins can also check, import, or force re-import manually.
+
+## Manual Review Export
+
+Manual review export reads only:
+
+- local imported literature metadata
+- local digest memberships
+- local manual review rows
+
+Output is rendered through the producer export formatter with `daily_review_schema`.
+
+Naming:
+
+- per-user: `<uid>-data.xlsx`
+- fallback: `webuser-<id>-data.xlsx`
+- aggregate: `aggregate-data.xlsx`
+
+Matching `.csv` and `.html` sidecars use the same stem.
+
+## Historical Alembic Files
+
+- `backend/alembic/versions/0001_initial.py` and `backend/alembic/versions/0002_paper_pushes.py` are retained as historical migration snapshots.
+- They still mention removed analytics and legacy local-content tables.
+- They are not the current architecture source of truth.
+- For the supported runtime architecture, use `backend/app/models.py`, `backend/app/migrations.py`, and `backend/app/integrations/producer_import/`.

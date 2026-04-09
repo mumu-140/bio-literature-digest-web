@@ -33,16 +33,15 @@ class InstancePathsTest(unittest.TestCase):
         paths = get_instance_paths(PROJECT_ROOT)
         expected_producer_root = PROJECT_ROOT.parent / "bio-literature-digest"
         self.assertEqual(paths.instance_root, PROJECT_ROOT / "bio-literature-config")
-        self.assertEqual(
-            paths.shared_data_dir,
-            expected_producer_root / "bio-literature-config" / "data" / "shared",
-        )
         self.assertEqual(paths.backend_env_file, PROJECT_ROOT / "bio-literature-config" / "env" / "web" / "backend.env.local")
         self.assertEqual(paths.producer_root, expected_producer_root)
         self.assertEqual(
             paths.producer_archive_dir,
-            expected_producer_root / "archives" / "daily-digests",
+            expected_producer_root / "var" / "archives" / "daily-digests",
         )
+        self.assertEqual(paths.producer_users_config, expected_producer_root / "local" / "integrations" / "users.yaml")
+        self.assertEqual(paths.producer_email_config, expected_producer_root / "local" / "integrations" / "email_config.yaml")
+        self.assertEqual(paths.producer_database_file, expected_producer_root / "var" / "db" / "bio_digest.sqlite3")
 
     def test_settings_resolve_relative_sqlite_path_inside_instance_data_dir(self) -> None:
         with tempfile.TemporaryDirectory(prefix="bio-digest-web-instance-") as tmpdir:
@@ -53,7 +52,6 @@ class InstancePathsTest(unittest.TestCase):
                 "\n".join(
                     [
                         "DATABASE_URL=sqlite:///./custom.db",
-                        "SHARED_DATABASE_URL=sqlite:///./shared-custom.db",
                         "ACCESS_TRACE_DIR=access-traces",
                         "REVIEW_EXPORT_DIR=review-tables",
                         "SESSION_SECRET=test-secret",
@@ -66,10 +64,6 @@ class InstancePathsTest(unittest.TestCase):
             reset_settings_cache()
             settings = get_settings()
             self.assertEqual(settings.database_url, f"sqlite:///{(instance_root / 'data' / 'web' / 'custom.db').resolve()}")
-            self.assertEqual(
-                settings.shared_database_url,
-                f"sqlite:///{(PROJECT_ROOT.parent / 'bio-literature-digest' / 'bio-literature-config' / 'data' / 'shared' / 'shared-custom.db').resolve()}",
-            )
             self.assertEqual(settings.access_trace_dir, str((instance_root / "data" / "web" / "access-traces").resolve()))
             self.assertEqual(settings.review_export_dir, str((instance_root / "data" / "web" / "review-tables").resolve()))
 

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app import database
 from app.config import reset_settings_cache
 
 
@@ -14,11 +15,12 @@ class UserVisibilityTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmpdir = tempfile.TemporaryDirectory(prefix="bio-digest-web-visibility-")
         db_path = Path(self.tmpdir.name) / "visibility.db"
-        shared_db_path = Path(self.tmpdir.name) / "shared.db"
         os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
-        os.environ["SHARED_DATABASE_URL"] = f"sqlite:///{shared_db_path}"
         os.environ["INITIAL_ADMIN_EMAIL"] = "primary-admin@example.com"
         os.environ["ACCESS_TRACE_DIR"] = str(Path(self.tmpdir.name) / "access-traces")
+        os.environ["PRODUCER_SYNC_ENABLED"] = "false"
+        database.engine = None
+        database.SessionLocal = None
         reset_settings_cache()
         from app.main import create_app
 
@@ -26,8 +28,10 @@ class UserVisibilityTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.tmpdir.cleanup()
-        for key in ("DATABASE_URL", "SHARED_DATABASE_URL", "INITIAL_ADMIN_EMAIL", "ACCESS_TRACE_DIR"):
+        for key in ("DATABASE_URL", "INITIAL_ADMIN_EMAIL", "ACCESS_TRACE_DIR", "PRODUCER_SYNC_ENABLED"):
             os.environ.pop(key, None)
+        database.engine = None
+        database.SessionLocal = None
         reset_settings_cache()
 
     def _login(self, email: str) -> dict[str, str]:
