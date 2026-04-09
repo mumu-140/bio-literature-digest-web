@@ -123,6 +123,5 @@ This runs:
 - `npm run build` in `frontend/`
 - `python3 tools/audit_open_source.py`
 
-## Linux DO Declaration
-
-Linux DO Declaration: this open-source baseline targets Linux operations (DO = Deployment Operator). All hostnames, paths, and account values in README/examples are placeholders and must be replaced before deployment.
+## Acknowledgments
+Special thanks to the **[Linux.do](https://linux.do/)** community for your support and feedback.
