@@ -8,22 +8,22 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..shared_models import SharedActor, SharedActorFavorite, SharedDigestMembership, SharedExportJob, SharedLiteratureItem
+from ..models import ImportedDigestMembership, ImportedLiteratureItem, UserExportJobV2
 
 
 def create_export_job(
     db: Session,
     *,
-    actor: Optional[SharedActor],
+    requested_by_user_id: Optional[int],
     requested_by_key: str,
     kind: str,
     output_name: str,
     content_type: str,
     content_text: str,
     params: dict,
-) -> SharedExportJob:
-    job = SharedExportJob(
-        actor_id=actor.id if actor else None,
+) -> UserExportJobV2:
+    job = UserExportJobV2(
+        requested_by_user_id=requested_by_user_id,
         requested_by_key=requested_by_key,
         kind=kind,
         status="completed",
@@ -39,23 +39,15 @@ def create_export_job(
     return job
 
 
-def fetch_items_for_export(db: Session, date_value: Optional[str]) -> list[SharedLiteratureItem]:
+def fetch_items_for_export(db: Session, date_value: Optional[str]) -> list[ImportedLiteratureItem]:
     statement = (
-        select(SharedLiteratureItem)
-        .join(SharedDigestMembership, SharedDigestMembership.item_id == SharedLiteratureItem.id)
-        .where(SharedDigestMembership.list_type == "digest")
+        select(ImportedLiteratureItem)
+        .join(ImportedDigestMembership, ImportedDigestMembership.literature_item_id == ImportedLiteratureItem.id)
+        .where(ImportedDigestMembership.list_type == "digest")
     )
     if date_value:
-        statement = statement.where(SharedDigestMembership.digest_date == date_type.fromisoformat(date_value))
+        statement = statement.where(ImportedDigestMembership.digest_date == date_type.fromisoformat(date_value))
     return list(db.scalars(statement).unique())
-
-
-def fetch_actor_favorites_for_export(db: Session, actor_id: int) -> list[SharedActorFavorite]:
-    return list(
-        db.scalars(
-            select(SharedActorFavorite).where(SharedActorFavorite.actor_id == actor_id).order_by(SharedActorFavorite.favorited_at.desc())
-        )
-    )
 
 
 def csv_from_rows(rows: list[dict[str, str]], columns: list[tuple[str, str]]) -> str:
@@ -67,12 +59,13 @@ def csv_from_rows(rows: list[dict[str, str]], columns: list[tuple[str, str]]) ->
     return buffer.getvalue()
 
 
-def items_to_rows(items: list[SharedLiteratureItem]) -> list[dict[str, str]]:
+def items_to_rows(items: list[ImportedLiteratureItem]) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     for item in items:
         rows.append(
             {
                 "id": str(item.id),
+                "canonical_key": item.literature_item_key,
                 "doi": item.doi,
                 "journal": item.journal,
                 "publish_date": item.publish_date,

@@ -1,6 +1,6 @@
 ---
 name: bio-literature-digest-web
-description: Build and operate the web console for bio-literature-digest, including local-account auth, shared daily paper browsing, favorites, analytics, and exports on shared data.
+description: Build and operate the web consumer/workbench for bio-literature-digest, including local-account auth, imported literature browsing, favorites, exports, pushes, and low-frequency manual review on the web app's own data plane.
 ---
 
 # Bio Literature Digest Web
@@ -9,24 +9,25 @@ description: Build and operate the web console for bio-literature-digest, includ
 
 This project is the web consumer for `bio-literature-digest`.
 
-- `backend/` provides FastAPI APIs, SQLAlchemy models, and deployment-ready configuration.
-- `frontend/` provides the authenticated React UI for daily papers, favorites, analytics, admin users, and exports.
-- `deploy/` contains Cloudflare Tunnel templates and deployment notes for the configured public hostname.
+- `backend/` provides FastAPI APIs, producer import integration, and local operational models.
+- `frontend/` provides the authenticated React UI for daily papers, favorites, exports, pushes, and admin import controls.
+- `deploy/cloudflare-tunnel/` contains the canonical public tunnel templates.
 - `bio-literature-config/` is the local-only instance root.
 - `bio-literature-config/env/` stores real env files.
-- `bio-literature-config/data/` stores database and review/access data.
+- `bio-literature-config/data/` stores the local database, access traces, and review exports.
 - `bio-literature-config/runtime/` stores pid files and logs.
-- `bio-literature-config/tunnel/` stores Cloudflare Tunnel config and credentials.
+- `bio-literature-config/tunnel/` stores real Cloudflare Tunnel config and credentials.
 - The producer root defaults to the sibling project `../bio-literature-digest`.
-- The canonical operational entrypoints are `./start.sh` and `./stop.sh`. They read host, port, hostname, and public URL from `bio-literature-config/env/web/*.local`, and `ENABLE_TUNNEL` controls whether Cloudflare Tunnel is started.
+- The canonical operational entrypoints are `./start.sh` and `./stop.sh`.
 
 ## Core Rules
 
-- Treat `bio-literature-digest` as the producer of `digest.csv`, `digest.html`, `digest.xlsx`, and `run_metadata.json`.
-- Do not reimplement the fetch/classify/translate pipeline in this project.
-- Read and write literature-related data through the shared database.
-- Keep the shared daily paper pool global; per-user differences are favorites, exports, and personal analytics.
+- Treat `bio-literature-digest` as the only producer of literature content.
+- Do not reimplement the producer fetch/classify/translate/archive pipeline in this project.
+- Producer SQLite and producer archives are source inputs only.
+- Keep the web UI reading only from the web app's own operational DB.
 - Keep only two roles: `admin` and `member`.
+- Do not restore analytics as a primary product surface.
 
 ## Commands
 

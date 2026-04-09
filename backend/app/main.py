@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
+from threading import Lock
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
-from .api import admin, analytics, auth, digests, exports, favorites, pushes
+from .api import admin, auth, digests, exports, favorites, pushes
 from .config import get_settings
 from . import database
 from .migrations import run_runtime_migrations
 from .models import User
-from . import shared_database
-from .shared_models import SharedBase
+from .integrations.producer_import.service import check_and_import_latest_runs, sync_users_from_producer_sources
+
+_PRODUCER_SYNC_LOCK = Lock()
 
 
 def bootstrap_admin() -> None:
@@ -36,16 +39,31 @@ def bootstrap_admin() -> None:
         db.add(admin_user)
         db.commit()
 
+def sync_from_producer(*, trigger: str = "startup") -> None:
+    if not _PRODUCER_SYNC_LOCK.acquire(blocking=False):
+        return
+    try:
+        if database.SessionLocal is not None:
+            with database.SessionLocal() as db:
+                settings = get_settings()
+                if settings.producer_sync_enabled:
+                    sync_users_from_producer_sources(db)
+                    check_and_import_latest_runs(db, trigger=trigger)
+    finally:
+        _PRODUCER_SYNC_LOCK.release()
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     database.configure_database()
     run_runtime_migrations(database.engine)
     database.Base.metadata.create_all(bind=database.engine)
-    shared_database.configure_shared_database()
-    SharedBase.metadata.create_all(bind=shared_database.shared_engine)
+    await asyncio.to_thread(sync_from_producer, trigger="startup")
     bootstrap_admin()
-    yield
+    try:
+        yield
+    finally:
+        return
 
 
 def create_app() -> FastAPI:
@@ -63,7 +81,6 @@ def create_app() -> FastAPI:
     app.include_router(digests.router, prefix=settings.api_prefix)
     app.include_router(favorites.router, prefix=settings.api_prefix)
     app.include_router(pushes.router, prefix=settings.api_prefix)
-    app.include_router(analytics.router, prefix=settings.api_prefix)
     app.include_router(exports.router, prefix=settings.api_prefix)
 
     @app.get("/healthz")

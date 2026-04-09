@@ -8,28 +8,31 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from ..deps import get_current_user, get_db
-from ..models import PaperPush, User
+from ..models import LiteraturePushV2, User
 from ..schemas import PaperPushRead, PaperPushUpdate
 from ..services.user_visibility import require_visible_target_user
 
 router = APIRouter(prefix="/pushes", tags=["pushes"])
 
 
-def serialize_push(push: PaperPush) -> PaperPushRead:
+def serialize_push(push: LiteraturePushV2) -> PaperPushRead:
+    if push.literature_item is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Push item missing local content")
     return PaperPushRead(
         id=push.id,
-        paper_id=push.paper_id,
+        paper_id=push.literature_item.id,
+        canonical_key=push.literature_item_key,
         recipient_user_id=push.recipient_user_id,
         sent_by_user_id=push.sent_by_user_id,
         note=push.note,
         is_read=push.is_read,
         pushed_at=push.pushed_at,
         read_at=push.read_at,
-        title_en=push.paper.title_en,
-        title_zh=push.paper.title_zh,
-        journal=push.paper.journal,
-        publish_date=push.paper.publish_date,
-        article_url=push.paper.article_url,
+        title_en=push.literature_item.title_en,
+        title_zh=push.literature_item.title_zh,
+        journal=push.literature_item.journal,
+        publish_date=push.literature_item.publish_date,
+        article_url=push.literature_item.article_url,
         sender_name=push.sender.name,
         recipient_name=push.recipient.name,
     )
@@ -49,14 +52,14 @@ def list_pushes(
         target_user_id = require_visible_target_user(db, current_user, user_id).id
     pushes = list(
         db.scalars(
-            select(PaperPush)
+            select(LiteraturePushV2)
             .options(
-                joinedload(PaperPush.paper),
-                joinedload(PaperPush.sender),
-                joinedload(PaperPush.recipient),
+                joinedload(LiteraturePushV2.literature_item),
+                joinedload(LiteraturePushV2.sender),
+                joinedload(LiteraturePushV2.recipient),
             )
-            .where(PaperPush.recipient_user_id == target_user_id)
-            .order_by(PaperPush.pushed_at.desc())
+            .where(LiteraturePushV2.recipient_user_id == target_user_id)
+            .order_by(LiteraturePushV2.pushed_at.desc())
         )
     )
     return [serialize_push(push) for push in pushes]
@@ -70,9 +73,13 @@ def update_push(
     db: Session = Depends(get_db),
 ) -> PaperPushRead:
     push = db.scalar(
-        select(PaperPush)
-        .options(joinedload(PaperPush.paper), joinedload(PaperPush.sender), joinedload(PaperPush.recipient))
-        .where(PaperPush.id == push_id)
+        select(LiteraturePushV2)
+        .options(
+            joinedload(LiteraturePushV2.literature_item),
+            joinedload(LiteraturePushV2.sender),
+            joinedload(LiteraturePushV2.recipient),
+        )
+        .where(LiteraturePushV2.id == push_id)
     )
     if push is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Push not found")

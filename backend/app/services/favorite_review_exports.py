@@ -14,7 +14,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from ..config import get_settings
-from ..models import Favorite, Paper, PaperDailyEntry, User
+from ..models import ImportedDigestMembership, ImportedLiteratureItem, User, UserManualReview
 
 REVIEW_DECISIONS = ["keep", "review", "reject"]
 
@@ -85,7 +85,7 @@ def normalize_favorite_review_payload(
     review_final_category: str,
     reviewer_notes: str,
 ) -> dict[str, str]:
-    base_item = getattr(favorite, "paper", None) or getattr(favorite, "item", None)
+    base_item = getattr(favorite, "paper", None) or getattr(favorite, "item", None) or favorite
     base_interest_level = normalize_review_field(getattr(base_item, "interest_level", ""))
     base_interest_tag = normalize_review_field(getattr(base_item, "interest_tag", ""))
     base_category = normalize_review_field(getattr(base_item, "category", ""))
@@ -105,18 +105,6 @@ def normalize_favorite_review_payload(
     return normalized
 
 
-def favorite_has_review_update(favorite: Favorite) -> bool:
-    return any(
-        [
-            normalize_review_field(favorite.review_interest_level),
-            normalize_review_field(favorite.review_interest_tag),
-            normalize_review_field(favorite.review_final_decision),
-            normalize_review_field(favorite.review_final_category),
-            normalize_review_field(favorite.reviewer_notes),
-        ]
-    )
-
-
 def user_review_weight(user: User) -> int:
     if user.user_group == "outsider":
         return 1
@@ -130,68 +118,97 @@ def _safe_segment(value: str) -> str:
     return cleaned.strip("._-") or "user"
 
 
-def _review_key(favorite: Favorite) -> str:
-    if favorite.paper.doi:
-        return f"doi:{favorite.paper.doi.strip().lower()}"
-    if favorite.paper.canonical_key:
-        return favorite.paper.canonical_key
-    return f"paper:{favorite.paper_id}"
+def _review_key(review: UserManualReview) -> str:
+    if review.literature_item_key:
+        return review.literature_item_key
+    if review.literature_item and review.literature_item.doi:
+        return f"doi:{review.literature_item.doi.strip().lower()}"
+    return f"review:{review.id}"
 
 
-def _latest_daily_entry(paper: Paper) -> PaperDailyEntry | None:
-    entries = list(paper.daily_entries or [])
+def _latest_membership(item: ImportedLiteratureItem | None) -> ImportedDigestMembership | None:
+    entries = list((item.memberships if item is not None else []) or [])
     if not entries:
         return None
-    return max(entries, key=lambda entry: (entry.digest_date, entry.created_at, entry.id))
+    list_type_rank = {"daily_review": 0, "digest": 1}
+    return sorted(
+        entries,
+        key=lambda entry: (
+            entry.digest_date,
+            -list_type_rank.get(entry.list_type, 99),
+            -entry.row_index,
+            entry.id,
+        ),
+        reverse=True,
+    )[0]
 
 
-def _favorite_sort_timestamp(favorite: Favorite) -> datetime:
-    return favorite.review_updated_at or favorite.favorited_at
+def _review_sort_timestamp(review: UserManualReview) -> datetime:
+    return review.review_updated_at or review.updated_at or review.created_at
 
 
-def _build_review_record(favorite: Favorite) -> dict[str, Any]:
-    latest_entry = _latest_daily_entry(favorite.paper)
-    raw_record = latest_entry.raw_record_json if latest_entry else {}
-    publication_stage = ""
-    if latest_entry is not None:
-        publication_stage = latest_entry.publication_stage
-    publication_stage = str(publication_stage or raw_record.get("publication_stage") or "journal")
-    tags = favorite.paper.tags_json or raw_record.get("tags") or []
+def _iso_utc(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    else:
+        value = value.astimezone(timezone.utc)
+    return value.replace(microsecond=0).isoformat()
+
+
+def _build_review_record(review: UserManualReview) -> dict[str, Any]:
+    item = review.literature_item
+    latest_entry = _latest_membership(item)
+    raw_record = latest_entry.source_record_json if latest_entry else {}
+    publication_stage = str(
+        (latest_entry.publication_stage if latest_entry is not None else "")
+        or raw_record.get("publication_stage")
+        or (item.publication_stage if item is not None else "")
+        or "journal"
+    )
+    tags = list((item.tags_json if item is not None else []) or raw_record.get("tags") or [])
     if not isinstance(tags, list):
         tags = [str(tags)]
     return {
-        "source_id": str(raw_record.get("source_id") or favorite.paper.extra_json.get("source_id") or favorite.paper.canonical_key),
-        "journal": favorite.paper.journal,
-        "publish_date": favorite.paper.publish_date,
+        "source_id": str(
+            raw_record.get("source_id")
+            or (item.source_id if item is not None else "")
+            or (item.literature_item_key if item is not None else review.literature_item_key)
+        ),
+        "journal": item.journal if item is not None else "",
+        "publish_date": item.publish_date if item is not None else "",
         "publication_stage": publication_stage,
-        "category": favorite.paper.category,
-        "interest_level": favorite.review_interest_level or favorite.paper.interest_level,
-        "interest_tag": favorite.review_interest_tag or favorite.paper.interest_tag,
-        "review_interest_level": favorite.review_interest_level,
-        "review_interest_tag": favorite.review_interest_tag,
-        "title_en": favorite.paper.title_en,
-        "title_zh": favorite.paper.title_zh,
-        "summary_zh": favorite.paper.summary_zh,
-        "abstract": favorite.paper.abstract,
-        "doi": favorite.paper.doi,
-        "article_url": favorite.paper.article_url,
+        "category": item.category if item is not None else "",
+        "interest_level": review.review_interest_level or (item.interest_level if item is not None else ""),
+        "interest_tag": review.review_interest_tag or (item.interest_tag if item is not None else ""),
+        "review_interest_level": review.review_interest_level,
+        "review_interest_tag": review.review_interest_tag,
+        "title_en": item.title_en if item is not None else "",
+        "title_zh": item.title_zh if item is not None else "",
+        "summary_zh": item.summary_zh if item is not None else "",
+        "abstract": item.abstract if item is not None else "",
+        "doi": item.doi if item is not None else "",
+        "article_url": item.article_url if item is not None else "",
         "tags": tags,
-        "llm_decision": str(raw_record.get("llm_decision") or raw_record.get("final_decision") or ""),
+        "llm_decision": str(
+            raw_record.get("llm_decision")
+            or raw_record.get("final_decision")
+            or (latest_entry.decision if latest_entry else "")
+        ),
         "llm_confidence": str(raw_record.get("llm_confidence") or ""),
         "llm_reason": str(raw_record.get("llm_reason") or raw_record.get("decision_reason") or ""),
-        "review_final_decision": favorite.review_final_decision,
-        "review_final_category": favorite.review_final_category,
-        "reviewer_notes": favorite.reviewer_notes,
-        "_paper_id": favorite.paper_id,
-        "_favorite_id": favorite.id,
-        "_favorite_user_id": favorite.user_id,
-        "_favorite_email": favorite.user.email,
-        "_favorite_name": favorite.user.name,
-        "_favorite_role": favorite.user.role,
-        "_favorite_group": favorite.user.user_group,
-        "_review_weight": user_review_weight(favorite.user),
-        "_review_updated_at": (_favorite_sort_timestamp(favorite).astimezone(timezone.utc).replace(microsecond=0).isoformat()),
-        "_review_key": _review_key(favorite),
+        "review_final_decision": review.review_final_decision,
+        "review_final_category": review.review_final_category,
+        "reviewer_notes": review.reviewer_notes,
+        "_literature_item_key": review.literature_item_key,
+        "_review_id": review.id,
+        "_review_user_id": review.user_id,
+        "_review_email": review.user.email,
+        "_review_name": review.user.name,
+        "_review_role": review.user.role,
+        "_review_group": review.user.user_group,
+        "_review_weight": user_review_weight(review.user),
+        "_review_updated_at": _iso_utc(_review_sort_timestamp(review)),
+        "_review_key": _review_key(review),
     }
 
 
@@ -207,35 +224,34 @@ def _dedupe_records_by_latest(records: Iterable[dict[str, Any]]) -> list[dict[st
 
 def _review_source_statement():
     return (
-        select(Favorite)
+        select(UserManualReview)
         .options(
-            joinedload(Favorite.user),
-            joinedload(Favorite.paper).joinedload(Paper.daily_entries),
+            joinedload(UserManualReview.user),
+            joinedload(UserManualReview.literature_item).joinedload(ImportedLiteratureItem.memberships),
         )
         .where(
             or_(
-                Favorite.review_interest_level != "",
-                Favorite.review_interest_tag != "",
-                Favorite.review_final_decision != "",
-                Favorite.review_final_category != "",
-                Favorite.reviewer_notes != "",
-                Favorite.review_updated_at.is_not(None),
+                UserManualReview.review_interest_level != "",
+                UserManualReview.review_interest_tag != "",
+                UserManualReview.review_final_decision != "",
+                UserManualReview.review_final_category != "",
+                UserManualReview.reviewer_notes != "",
+                UserManualReview.review_updated_at.is_not(None),
             )
         )
     )
 
 
-def fetch_modified_favorites(db: Session) -> list[Favorite]:
-    statement = _review_source_statement()
-    favorites = list(db.execute(statement).unique().scalars())
-    return sorted(favorites, key=_favorite_sort_timestamp, reverse=True)
+def fetch_modified_reviews(db: Session) -> list[UserManualReview]:
+    reviews = list(db.execute(_review_source_statement()).unique().scalars())
+    return sorted(reviews, key=_review_sort_timestamp, reverse=True)
 
 
 def build_user_review_records(db: Session) -> dict[int, list[dict[str, Any]]]:
-    favorites = fetch_modified_favorites(db)
+    reviews = fetch_modified_reviews(db)
     grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
-    for favorite in favorites:
-        grouped[favorite.user_id].append(_build_review_record(favorite))
+    for review in reviews:
+        grouped[review.user_id].append(_build_review_record(review))
     return {user_id: _dedupe_records_by_latest(records) for user_id, records in grouped.items()}
 
 
@@ -254,17 +270,17 @@ def _weighted_choice(records: list[dict[str, Any]], field: str, fallback: str = 
 
 
 def build_weighted_review_records(db: Session) -> list[dict[str, Any]]:
-    favorites = fetch_modified_favorites(db)
+    reviews = fetch_modified_reviews(db)
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for favorite in favorites:
-        record = _build_review_record(favorite)
+    for review in reviews:
+        record = _build_review_record(review)
         grouped[str(record["_review_key"])].append(record)
     aggregated: list[dict[str, Any]] = []
     for key, records in grouped.items():
         ordered = sorted(records, key=lambda item: str(item.get("_review_updated_at") or ""), reverse=True)
         latest = dict(ordered[0])
         contributors = ", ".join(
-            f'{record["_favorite_name"]}({record["_review_weight"]})'
+            f'{record["_review_name"]}({record["_review_weight"]})'
             for record in sorted(
                 ordered,
                 key=lambda item: (int(item.get("_review_weight") or 0), str(item.get("_review_updated_at") or "")),
@@ -290,7 +306,7 @@ def build_weighted_review_records(db: Session) -> list[dict[str, Any]]:
             suffix = f" | {note_text}" if note_text else ""
             if detail or note_text:
                 note_lines.append(
-                    f'[{record["_review_weight"]}] {record["_favorite_name"]} {record["_review_updated_at"]}: {detail}{suffix}'.strip()
+                    f'[{record["_review_weight"]}] {record["_review_name"]} {record["_review_updated_at"]}: {detail}{suffix}'.strip()
                 )
         latest["interest_level"] = _weighted_choice(ordered, "review_interest_level", fallback=str(latest.get("interest_level") or ""))
         latest["interest_tag"] = _weighted_choice(ordered, "review_interest_tag", fallback=str(latest.get("interest_tag") or ""))
@@ -363,6 +379,13 @@ def _relative_manifest_paths(paths: dict[str, str], *, review_root: Path) -> dic
     return {key: str(Path(value).resolve().relative_to(review_root.resolve())) for key, value in paths.items()}
 
 
+def _user_review_stem(user: User) -> str:
+    uid = _safe_segment(user.producer_uid or "")
+    if uid != "user":
+        return f"{uid}-data"
+    return f"webuser-{user.id}-data"
+
+
 def export_favorite_review_tables(db: Session, *, generated_at: datetime | None = None) -> dict[str, Any]:
     settings = get_settings()
     generated = (generated_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -375,12 +398,14 @@ def export_favorite_review_tables(db: Session, *, generated_at: datetime | None 
     per_user_outputs: list[dict[str, Any]] = []
     for user in users:
         records = records_by_user.get(user.id, [])
-        user_dir_name = f"{user.id:03d}-{_safe_segment(user.email)}"
-        current_paths = _export_record_set(records, current_root / "users" / user_dir_name, "favorite-review-current")
-        archive_paths = _export_record_set(records, archive_root / "users" / user_dir_name, f"favorite-review-{stamp}")
+        stem = _user_review_stem(user)
+        user_dir_name = _safe_segment(user.producer_uid or f"webuser-{user.id}")
+        current_paths = _export_record_set(records, current_root / "users" / user_dir_name, stem)
+        archive_paths = _export_record_set(records, archive_root / "users" / user_dir_name, stem)
         per_user_outputs.append(
             {
                 "user_id": user.id,
+                "producer_uid": user.producer_uid,
                 "email": user.email,
                 "name": user.name,
                 "role": user.role,
@@ -391,8 +416,8 @@ def export_favorite_review_tables(db: Session, *, generated_at: datetime | None 
             }
         )
     weighted_records = build_weighted_review_records(db)
-    aggregate_current = _export_record_set(weighted_records, current_root / "aggregate", "weighted-favorite-review-current")
-    aggregate_archive = _export_record_set(weighted_records, archive_root / "aggregate", f"weighted-favorite-review-{stamp}")
+    aggregate_current = _export_record_set(weighted_records, current_root / "aggregate", "aggregate-data")
+    aggregate_archive = _export_record_set(weighted_records, archive_root / "aggregate", "aggregate-data")
     manifest = {
         "generated_at": generated.replace(microsecond=0).isoformat(),
         "review_root": ".",

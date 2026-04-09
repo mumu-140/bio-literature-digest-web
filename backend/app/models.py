@@ -24,19 +24,28 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    producer_uid: Mapped[str] = mapped_column(String(128), default="", index=True)
 
     sessions: Mapped[list["Session"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    favorites: Mapped[list["Favorite"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    received_pushes: Mapped[list["PaperPush"]] = relationship(
+    imported_favorites: Mapped[list["UserLiteratureFavorite"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    manual_reviews: Mapped[list["UserManualReview"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    received_imported_pushes: Mapped[list["LiteraturePushV2"]] = relationship(
         back_populates="recipient",
         cascade="all, delete-orphan",
-        foreign_keys="PaperPush.recipient_user_id",
+        foreign_keys="LiteraturePushV2.recipient_user_id",
     )
-    sent_pushes: Mapped[list["PaperPush"]] = relationship(
+    sent_imported_pushes: Mapped[list["LiteraturePushV2"]] = relationship(
         back_populates="sender",
         cascade="all, delete-orphan",
-        foreign_keys="PaperPush.sent_by_user_id",
+        foreign_keys="LiteraturePushV2.sent_by_user_id",
     )
+    export_jobs_v2: Mapped[list["UserExportJobV2"]] = relationship(back_populates="requested_by")
     managed_users: Mapped[list["User"]] = relationship(
         back_populates="owner_admin",
         foreign_keys="User.owner_admin_user_id",
@@ -64,141 +73,6 @@ class Session(Base):
     user: Mapped[User] = relationship(back_populates="sessions")
 
 
-class DigestRun(Base):
-    __tablename__ = "digest_runs"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    digest_date: Mapped[date] = mapped_column(Date, index=True)
-    work_dir: Mapped[str] = mapped_column(String(1024))
-    status: Mapped[str] = mapped_column(String(32), default="success")
-    email_status: Mapped[str] = mapped_column(String(32), default="not_attempted")
-    window_start_utc: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    window_end_utc: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
-    imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    daily_entries: Mapped[list["PaperDailyEntry"]] = relationship(back_populates="digest_run", cascade="all, delete-orphan")
-
-
-class Paper(Base):
-    __tablename__ = "papers"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    canonical_key: Mapped[str] = mapped_column(String(512), unique=True, index=True)
-    doi: Mapped[str] = mapped_column(String(255), default="", index=True)
-    journal: Mapped[str] = mapped_column(String(255), default="", index=True)
-    category: Mapped[str] = mapped_column(String(128), default="other", index=True)
-    publish_date: Mapped[str] = mapped_column(String(64), default="")
-    interest_level: Mapped[str] = mapped_column(String(64), default="一般", index=True)
-    interest_score: Mapped[int] = mapped_column(Integer, default=3, index=True)
-    interest_tag: Mapped[str] = mapped_column(String(255), default="其他")
-    title_en: Mapped[str] = mapped_column(Text, default="")
-    title_zh: Mapped[str] = mapped_column(Text, default="")
-    summary_zh: Mapped[str] = mapped_column(Text, default="")
-    abstract: Mapped[str] = mapped_column(Text, default="")
-    article_url: Mapped[str] = mapped_column(Text, default="")
-    tags_json: Mapped[list[str]] = mapped_column(JSON, default=list)
-    extra_json: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    daily_entries: Mapped[list["PaperDailyEntry"]] = relationship(back_populates="paper", cascade="all, delete-orphan")
-    favorites: Mapped[list["Favorite"]] = relationship(back_populates="paper")
-    pushes: Mapped[list["PaperPush"]] = relationship(back_populates="paper", cascade="all, delete-orphan")
-
-
-class PaperDailyEntry(Base):
-    __tablename__ = "paper_daily_entries"
-    __table_args__ = (UniqueConstraint("digest_date", "paper_id", name="uq_paper_daily_entries_date_paper"),)
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    digest_run_id: Mapped[int] = mapped_column(ForeignKey("digest_runs.id", ondelete="CASCADE"), index=True)
-    paper_id: Mapped[int] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"), index=True)
-    digest_date: Mapped[date] = mapped_column(Date, index=True)
-    publication_stage: Mapped[str] = mapped_column(String(64), default="journal")
-    row_index: Mapped[int] = mapped_column(Integer, default=0)
-    raw_record_json: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    digest_run: Mapped[DigestRun] = relationship(back_populates="daily_entries")
-    paper: Mapped[Paper] = relationship(back_populates="daily_entries")
-
-
-class Favorite(Base):
-    __tablename__ = "favorites"
-    __table_args__ = (UniqueConstraint("user_id", "paper_id", name="uq_favorites_user_paper"),)
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    paper_id: Mapped[int] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"), index=True)
-    favorited_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    review_interest_level: Mapped[str] = mapped_column(String(64), default="")
-    review_interest_tag: Mapped[str] = mapped_column(String(255), default="")
-    review_final_decision: Mapped[str] = mapped_column(String(32), default="")
-    review_final_category: Mapped[str] = mapped_column(String(128), default="")
-    reviewer_notes: Mapped[str] = mapped_column(Text, default="")
-    review_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
-
-    user: Mapped[User] = relationship(back_populates="favorites")
-    paper: Mapped[Paper] = relationship(back_populates="favorites")
-
-
-class AnalyticsSnapshot(Base):
-    __tablename__ = "analytics_snapshots"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    scope_type: Mapped[str] = mapped_column(String(32), index=True)
-    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
-    period: Mapped[str] = mapped_column(String(32), index=True)
-    month: Mapped[str] = mapped_column(String(16), index=True)
-    snapshot_kind: Mapped[str] = mapped_column(String(32), default="network", index=True)
-    generated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
-    total_papers: Mapped[int] = mapped_column(Integer, default=0)
-    payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
-
-    nodes: Mapped[list["AnalyticsNode"]] = relationship(back_populates="snapshot", cascade="all, delete-orphan")
-    edges: Mapped[list["AnalyticsEdge"]] = relationship(back_populates="snapshot", cascade="all, delete-orphan")
-
-
-class AnalyticsNode(Base):
-    __tablename__ = "analytics_nodes"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    snapshot_id: Mapped[int] = mapped_column(ForeignKey("analytics_snapshots.id", ondelete="CASCADE"), index=True)
-    node_key: Mapped[str] = mapped_column(String(255), index=True)
-    label: Mapped[str] = mapped_column(String(255))
-    weight: Mapped[int] = mapped_column(Integer, default=0)
-
-    snapshot: Mapped[AnalyticsSnapshot] = relationship(back_populates="nodes")
-
-
-class AnalyticsEdge(Base):
-    __tablename__ = "analytics_edges"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    snapshot_id: Mapped[int] = mapped_column(ForeignKey("analytics_snapshots.id", ondelete="CASCADE"), index=True)
-    source_key: Mapped[str] = mapped_column(String(255), index=True)
-    target_key: Mapped[str] = mapped_column(String(255), index=True)
-    weight: Mapped[int] = mapped_column(Integer, default=0)
-
-    snapshot: Mapped[AnalyticsSnapshot] = relationship(back_populates="edges")
-
-
-class ExportJob(Base):
-    __tablename__ = "export_jobs"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    requested_by: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    kind: Mapped[str] = mapped_column(String(64), index=True)
-    status: Mapped[str] = mapped_column(String(32), default="completed", index=True)
-    params_json: Mapped[dict] = mapped_column(JSON, default=dict)
-    output_name: Mapped[str] = mapped_column(String(255))
-    content_type: Mapped[str] = mapped_column(String(128), default="text/plain")
-    content_text: Mapped[str] = mapped_column(Text, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-
-
 class ActionLog(Base):
     __tablename__ = "action_logs"
 
@@ -212,11 +86,202 @@ class ActionLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
-class PaperPush(Base):
-    __tablename__ = "paper_pushes"
+class ImportedLiteratureItem(Base):
+    __tablename__ = "imported_literature_items"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    paper_id: Mapped[int] = mapped_column(ForeignKey("papers.id", ondelete="CASCADE"), index=True)
+    literature_item_key: Mapped[str] = mapped_column(String(512), unique=True, index=True)
+    doi: Mapped[str] = mapped_column(String(255), default="", index=True)
+    canonical_url: Mapped[str] = mapped_column(Text, default="")
+    article_url: Mapped[str] = mapped_column(Text, default="")
+    journal: Mapped[str] = mapped_column(String(255), default="", index=True)
+    publish_date: Mapped[str] = mapped_column(String(64), default="")
+    publication_stage: Mapped[str] = mapped_column(String(64), default="journal")
+    category: Mapped[str] = mapped_column(String(128), default="other", index=True)
+    interest_level: Mapped[str] = mapped_column(String(64), default="一般", index=True)
+    interest_score: Mapped[int] = mapped_column(Integer, default=3, index=True)
+    interest_tag: Mapped[str] = mapped_column(String(255), default="")
+    title_en: Mapped[str] = mapped_column(Text, default="")
+    title_zh: Mapped[str] = mapped_column(Text, default="")
+    summary_zh: Mapped[str] = mapped_column(Text, default="")
+    abstract: Mapped[str] = mapped_column(Text, default="")
+    source_id: Mapped[str] = mapped_column(String(255), default="", index=True)
+    publisher_family: Mapped[str] = mapped_column(String(128), default="")
+    group_name: Mapped[str] = mapped_column(String(128), default="")
+    authors_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    tags_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    extra_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    memberships: Mapped[list["ImportedDigestMembership"]] = relationship(
+        back_populates="literature_item",
+        cascade="all, delete-orphan",
+    )
+    favorites_v2: Mapped[list["UserLiteratureFavorite"]] = relationship(back_populates="literature_item")
+    manual_reviews: Mapped[list["UserManualReview"]] = relationship(back_populates="literature_item")
+    pushes_v2: Mapped[list["LiteraturePushV2"]] = relationship(back_populates="literature_item")
+
+
+class ImportedDigestRun(Base):
+    __tablename__ = "imported_digest_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    digest_date: Mapped[date] = mapped_column(Date, unique=True, index=True)
+    source_run_id: Mapped[str] = mapped_column(String(255), default="", index=True)
+    source_updated_at_utc: Mapped[str] = mapped_column(String(64), default="", index=True)
+    source_status: Mapped[str] = mapped_column(String(32), default="")
+    source_email_status: Mapped[str] = mapped_column(String(32), default="")
+    source_work_dir: Mapped[str] = mapped_column(String(1024), default="")
+    source_window_start_utc: Mapped[str] = mapped_column(String(64), default="")
+    source_window_end_utc: Mapped[str] = mapped_column(String(64), default="")
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    artifact_validation_status: Mapped[str] = mapped_column(String(32), default="unknown", index=True)
+    artifact_validation_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    memberships: Mapped[list["ImportedDigestMembership"]] = relationship(
+        back_populates="digest_run",
+        cascade="all, delete-orphan",
+    )
+
+
+class ImportedDigestMembership(Base):
+    __tablename__ = "imported_digest_memberships"
+    __table_args__ = (
+        UniqueConstraint(
+            "digest_date",
+            "list_type",
+            "literature_item_key",
+            name="uq_imported_digest_membership",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    digest_run_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("imported_digest_runs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    literature_item_id: Mapped[int] = mapped_column(
+        ForeignKey("imported_literature_items.id", ondelete="CASCADE"),
+        index=True,
+    )
+    literature_item_key: Mapped[str] = mapped_column(String(512), index=True)
+    digest_date: Mapped[date] = mapped_column(Date, index=True)
+    list_type: Mapped[str] = mapped_column(String(32), index=True)
+    publication_stage: Mapped[str] = mapped_column(String(64), default="journal")
+    decision: Mapped[str] = mapped_column(String(32), default="")
+    row_index: Mapped[int] = mapped_column(Integer, default=0)
+    source_record_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    digest_run: Mapped[Optional[ImportedDigestRun]] = relationship(back_populates="memberships")
+    literature_item: Mapped[ImportedLiteratureItem] = relationship(back_populates="memberships")
+
+
+class ProducerImportLedger(Base):
+    __tablename__ = "producer_import_ledger"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    digest_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True, index=True)
+    source_run_id: Mapped[str] = mapped_column(String(255), default="", index=True)
+    source_updated_at_utc: Mapped[str] = mapped_column(String(64), default="", index=True)
+    trigger: Mapped[str] = mapped_column(String(32), default="startup", index=True)
+    result_status: Mapped[str] = mapped_column(String(32), default="completed", index=True)
+    validation_status: Mapped[str] = mapped_column(String(32), default="unknown", index=True)
+    imported_items_count: Mapped[int] = mapped_column(Integer, default=0)
+    imported_memberships_count: Mapped[int] = mapped_column(Integer, default=0)
+    skipped_missing_key_count: Mapped[int] = mapped_column(Integer, default=0)
+    duplicate_membership_count: Mapped[int] = mapped_column(Integer, default=0)
+    conflict_count: Mapped[int] = mapped_column(Integer, default=0)
+    summary_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class UserLiteratureFavorite(Base):
+    __tablename__ = "user_literature_favorites"
+    __table_args__ = (
+        UniqueConstraint("user_id", "literature_item_key", name="uq_user_literature_favorite"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    literature_item_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("imported_literature_items.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    literature_item_key: Mapped[str] = mapped_column(String(512), index=True)
+    favorited_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user: Mapped[User] = relationship(back_populates="imported_favorites")
+    literature_item: Mapped[Optional[ImportedLiteratureItem]] = relationship(back_populates="favorites_v2")
+
+
+class UserManualReview(Base):
+    __tablename__ = "user_manual_reviews"
+    __table_args__ = (
+        UniqueConstraint("user_id", "literature_item_key", name="uq_user_manual_review"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    literature_item_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("imported_literature_items.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    literature_item_key: Mapped[str] = mapped_column(String(512), index=True)
+    review_interest_level: Mapped[str] = mapped_column(String(64), default="")
+    review_interest_tag: Mapped[str] = mapped_column(String(255), default="")
+    review_final_decision: Mapped[str] = mapped_column(String(32), default="")
+    review_final_category: Mapped[str] = mapped_column(String(128), default="")
+    reviewer_notes: Mapped[str] = mapped_column(Text, default="")
+    review_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user: Mapped[User] = relationship(back_populates="manual_reviews")
+    literature_item: Mapped[Optional[ImportedLiteratureItem]] = relationship(back_populates="manual_reviews")
+
+
+class UserExportJobV2(Base):
+    __tablename__ = "user_export_jobs_v2"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    requested_by_user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    requested_by_key: Mapped[str] = mapped_column(String(255), default="", index=True)
+    kind: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="completed", index=True)
+    params_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    output_name: Mapped[str] = mapped_column(String(255), default="")
+    content_type: Mapped[str] = mapped_column(String(128), default="text/plain")
+    content_text: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    requested_by: Mapped[Optional[User]] = relationship(back_populates="export_jobs_v2")
+
+
+class LiteraturePushV2(Base):
+    __tablename__ = "literature_pushes_v2"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    literature_item_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("imported_literature_items.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    literature_item_key: Mapped[str] = mapped_column(String(512), index=True)
     recipient_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     sent_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     note: Mapped[str] = mapped_column(Text, default="")
@@ -224,6 +289,6 @@ class PaperPush(Base):
     pushed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     read_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
-    paper: Mapped[Paper] = relationship(back_populates="pushes")
-    recipient: Mapped[User] = relationship(back_populates="received_pushes", foreign_keys=[recipient_user_id])
-    sender: Mapped[User] = relationship(back_populates="sent_pushes", foreign_keys=[sent_by_user_id])
+    literature_item: Mapped[Optional[ImportedLiteratureItem]] = relationship(back_populates="pushes_v2")
+    recipient: Mapped[User] = relationship(back_populates="received_imported_pushes", foreign_keys=[recipient_user_id])
+    sender: Mapped[User] = relationship(back_populates="sent_imported_pushes", foreign_keys=[sent_by_user_id])

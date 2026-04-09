@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useEffect, useState } from "react";
+import { FormEvent, ReactNode, useDeferredValue, useEffect, useRef, useState } from "react";
 import {
   NavLink,
   Navigate,
@@ -8,229 +8,77 @@ import {
   useNavigate,
   useSearchParams,
 } from "react-router-dom";
+import {
+  AuthUser,
+  ExportJob,
+  FavoriteItem,
+  FavoriteReviewDraft,
+  FavoriteReviewOptions,
+  ImportResult,
+  ImportRun,
+  DigestSortKey,
+  PaperItem,
+  PaperLibraryGroup,
+  PaperLibraryOverview,
+  PaperPushItem,
+  UserItem,
+  checkImportRuns,
+  createPush,
+  exportCustomTable,
+  fetchAdminUsers,
+  fetchAuthUser,
+  fetchFavoriteReviewOptions,
+  fetchImportRuns,
+  fetchPaperLibraryGroup,
+  fetchPaperLibraryOverview,
+  importRun,
+  listFavorites,
+  listPushes,
+  login,
+  logout,
+  reimportRun,
+  request,
+  saveFavoriteReview as saveFavoriteReviewRequest,
+  toggleFavorite as toggleFavoriteRequest,
+  updatePush,
+} from "./dataClient";
+import {
+  rememberRoute,
+  persistDigestPageCache,
+  persistDigestPageState,
+  restoreDigestPageCache,
+  restoreDigestPageState,
+  restoreRememberedRoute,
+  sanitizeRememberedRoute,
+} from "./features/digest/browserState";
+import {
+  DIGEST_FLAGSHIP_JOURNAL_ORDER,
+  DIGEST_INITIAL_GROUP_COUNT,
+  DIGEST_JOURNAL_MARKER_OVERRIDES,
+  DIGEST_TOAST_DURATION_MS,
+} from "./features/digest/config";
 
 const APP_HOSTNAME = import.meta.env.VITE_APP_HOSTNAME || "localhost";
 
-type AuthUser = {
-  id: number;
-  email: string;
-  name: string;
-  role: "admin" | "member";
-  is_active: boolean;
-};
-
-type PaperItem = {
-  id: number;
-  digest_date: string;
-  doi: string;
-  journal: string;
-  publish_date: string;
-  category: string;
-  interest_level: string;
-  interest_score: number;
-  interest_tag: string;
-  title_en: string;
-  title_zh: string;
-  summary_zh: string;
-  abstract: string;
-  article_url: string;
-  publication_stage: string;
-  tags: string[];
-  is_favorited: boolean;
-};
-
-type Paginated<T> = {
-  items: T[];
-  total: number;
-  page: number;
-  page_size: number;
-};
-
-type FavoriteItem = {
-  id: number;
-  user_id: number;
-  paper_id: number;
-  digest_date?: string | null;
-  doi: string;
-  journal: string;
-  publish_date: string;
-  category: string;
-  interest_level: string;
-  interest_tag: string;
-  title_en: string;
-  title_zh: string;
-  article_url: string;
-  favorited_at: string;
-  review_interest_level: string;
-  review_interest_tag: string;
-  review_final_decision: string;
-  review_final_category: string;
-  reviewer_notes: string;
-  review_updated_at?: string | null;
-};
-
-type FavoriteReviewOptions = {
-  interest_levels: string[];
-  interest_tags: string[];
-  review_final_decisions: string[];
-  review_final_categories: string[];
-};
-
-type FavoriteReviewDraft = {
-  review_interest_level: string;
-  review_interest_tag: string;
-  review_final_decision: string;
-  review_final_category: string;
-  reviewer_notes: string;
-};
-
-type UserItem = {
-  id: number;
-  email: string;
-  name: string;
-  role: "admin" | "member";
-  user_group: "internal" | "outsider";
-  owner_admin_user_id?: number | null;
-  is_active: boolean;
-  created_at: string;
-  last_login_at?: string | null;
-};
-
-type TrendPoint = {
-  label: string;
-  value: number;
-  journal?: string | null;
-};
-
-type AnalyticsResponse = {
-  scope_type: string;
-  period: string;
-  month: string;
-  total_papers: number;
-  nodes: Array<{ key: string; label: string; weight: number }>;
-  edges: Array<{ source: string; target: string; weight: number }>;
-  series: TrendPoint[];
-  summary: Record<string, unknown>;
-};
-
-type ExportJob = {
-  id: number;
-  kind: string;
-  status: string;
-  output_name: string;
-  content_type: string;
-  created_at: string;
-  finished_at?: string | null;
-  download_url: string;
-};
-
-type PaperPushItem = {
-  id: number;
-  paper_id: number;
-  recipient_user_id: number;
-  sent_by_user_id: number;
-  note: string;
-  is_read: boolean;
-  pushed_at: string;
-  read_at?: string | null;
-  title_en: string;
-  title_zh: string;
-  journal: string;
-  publish_date: string;
-  article_url: string;
-  sender_name: string;
-  recipient_name: string;
-};
-
 type PaperFilters = {
   query: string;
-  date: string;
+  publishDate: string;
   category: string;
   tag: string;
+  sort: DigestSortKey;
 };
 
-const apiBase = "";
-
-function browserTimezone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-  } catch {
-    return "";
-  }
-}
-
-function browserLanguage(): string {
-  if (typeof navigator === "undefined") {
-    return "";
-  }
-  return navigator.language || "";
-}
+type ToastState = {
+  kind: "success" | "error";
+  message: string;
+};
 
 const navItems = [
   { to: "/digests/today", label: "今日文献", shortLabel: "今日" },
   { to: "/pushes", label: "推送文献", shortLabel: "推送" },
-  { to: "/favorites", label: "收藏统计", shortLabel: "收藏" },
-  { to: "/analytics", label: "网络图与趋势", shortLabel: "趋势" },
+  { to: "/favorites", label: "收藏文献", shortLabel: "收藏" },
   { to: "/exports", label: "批量导出", shortLabel: "导出" },
 ];
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const timezone = browserTimezone();
-  const language = browserLanguage();
-  const response = await fetch(`${apiBase}${path}`, {
-    credentials: "include",
-    headers: {
-      "content-type": "application/json",
-      ...(timezone ? { "x-browser-timezone": timezone } : {}),
-      ...(language ? { "x-browser-language": language } : {}),
-      ...(init?.headers ?? {}),
-    },
-    ...init,
-  });
-  if (response.status === 204) {
-    return undefined as T;
-  }
-  const contentType = response.headers.get("content-type") || "";
-  const payload = contentType.includes("application/json") ? await response.json() : await response.text();
-  if (!response.ok) {
-    throw new Error(extractErrorMessage(payload));
-  }
-  return payload as T;
-}
-
-function extractErrorMessage(payload: unknown): string {
-  if (typeof payload === "string") {
-    return payload;
-  }
-  if (!payload || typeof payload !== "object") {
-    return "Request failed";
-  }
-  const detail = (payload as { detail?: unknown }).detail;
-  if (typeof detail === "string") {
-    return detail;
-  }
-  if (Array.isArray(detail)) {
-    const collected = detail
-      .map((item) => {
-        if (typeof item === "string") {
-          return item;
-        }
-        if (item && typeof item === "object" && "msg" in item && typeof item.msg === "string") {
-          return item.msg;
-        }
-        return "";
-      })
-      .filter(Boolean);
-    if (collected.length) {
-      return collected.join("；");
-    }
-  }
-  try {
-    return JSON.stringify(payload);
-  } catch {
-    return "Request failed";
-  }
-}
 
 function useAdminUsers(enabled: boolean) {
   const [users, setUsers] = useState<UserItem[]>([]);
@@ -240,7 +88,7 @@ function useAdminUsers(enabled: boolean) {
       setUsers([]);
       return;
     }
-    request<UserItem[]>("/api/admin/users")
+    fetchAdminUsers()
       .then(setUsers)
       .catch(() => setUsers([]));
   }, [enabled]);
@@ -253,7 +101,7 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    request<AuthUser>("/api/auth/me")
+    fetchAuthUser()
       .then(setUser)
       .catch(() => setUser(null))
       .finally(() => setLoading(false));
@@ -271,13 +119,13 @@ function App() {
         element={
           <ProtectedLayout user={user} onUserChange={setUser}>
             <Routes>
-              <Route path="/" element={<Navigate to="/digests/today" replace />} />
+              <Route path="/" element={<Navigate to={restoreRememberedRoute() || "/digests/today"} replace />} />
               <Route path="/digests/today" element={<DigestPage user={user!} />} />
               <Route path="/pushes" element={<PushInboxPage user={user!} />} />
               <Route path="/favorites" element={<FavoritesPage user={user!} />} />
-              <Route path="/analytics" element={<AnalyticsPage user={user!} />} />
               <Route path="/exports" element={<ExportsPage user={user!} />} />
               <Route path="/admin/users" element={user?.role === "admin" ? <AdminUsersPage /> : <Navigate to="/digests/today" replace />} />
+              <Route path="/admin/imports" element={user?.role === "admin" ? <AdminImportsPage /> : <Navigate to="/digests/today" replace />} />
             </Routes>
           </ProtectedLayout>
         }
@@ -298,12 +146,16 @@ function ProtectedLayout({
   const navigate = useNavigate();
   const location = useLocation();
 
+  useEffect(() => {
+    rememberRoute(`${location.pathname}${location.search}`);
+  }, [location.pathname, location.search]);
+
   if (!user) {
-    return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
+    return <Navigate to={`/login?next=${encodeURIComponent(`${location.pathname}${location.search}`)}`} replace />;
   }
 
   async function handleLogout() {
-    await request("/api/auth/logout", { method: "POST" });
+    await logout();
     onUserChange(null);
     navigate("/login");
   }
@@ -321,7 +173,7 @@ function ProtectedLayout({
           </div>
           <div className="sidebar-status">
             <span className="status-dot" />
-            Shared digest workspace
+            Local import workspace
           </div>
         </div>
         <nav className="nav-list">
@@ -335,10 +187,15 @@ function ProtectedLayout({
               账户管理
             </NavLink>
           ) : null}
+          {user.role === "admin" ? (
+            <NavLink to="/admin/imports" className={({ isActive }) => `nav-link${isActive ? " is-active" : ""}`}>
+              导入管理
+            </NavLink>
+          ) : null}
         </nav>
         <div className="sidebar-footer">
           <p className="small-copy">
-            用统一视图查看共享文献池、收藏行为和月度趋势。
+            用统一视图查看本地导入文献、收藏和低频人工备注。
           </p>
           <button className="ghost-button sidebar-logout" onClick={handleLogout}>退出登录</button>
         </div>
@@ -379,6 +236,12 @@ function ProtectedLayout({
               <span className="mobile-tabcopy">账户</span>
             </NavLink>
           ) : null}
+          {user.role === "admin" ? (
+            <NavLink to="/admin/imports" className={({ isActive }) => `mobile-tablink${isActive ? " is-active" : ""}`}>
+              <span className="mobile-tabicon">导</span>
+              <span className="mobile-tabcopy">导入</span>
+            </NavLink>
+          ) : null}
         </nav>
       </main>
     </div>
@@ -402,12 +265,11 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
     setPending(true);
     setError("");
     try {
-      const response = await request<{ user: AuthUser }>("/api/auth/login", {
-        method: "POST",
-        body: JSON.stringify(form),
-      });
+      const response = await login(form);
       onLogin(response.user);
-      navigate(searchParams.get("next") || "/digests/today", { replace: true });
+      navigate(sanitizeRememberedRoute(searchParams.get("next")) || restoreRememberedRoute() || "/digests/today", {
+        replace: true,
+      });
     } catch (submitError) {
       setError((submitError as Error).message);
     } finally {
@@ -421,7 +283,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
         <p className="eyebrow">{APP_HOSTNAME}</p>
         <h1>Bio Literature Digest Web</h1>
         <p className="muted">
-          统一查看今日文献、收藏、月度网络图、CNS 趋势和批量导出。
+          统一查看本地导入文献、收藏、人工备注和批量导出。
         </p>
         {hintedEmail ? <p className="muted">本邮件链接对应账户：{hintedEmail}</p> : null}
         <form className="stack" onSubmit={submit}>
@@ -446,36 +308,61 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
 function DigestPage({ user }: { user: AuthUser }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const adminUsers = useAdminUsers(user.role === "admin");
-  const [allPapers, setAllPapers] = useState<PaperItem[]>([]);
-  const [allDates, setAllDates] = useState<string[]>([]);
-  const [filters, setFilters] = useState<PaperFilters>(() => ({
-    query: searchParams.get("q") || "",
-    date: searchParams.get("date") || "",
-    category: searchParams.get("category") || "",
-    tag: searchParams.get("tag") || "",
-  }));
+  const hasExplicitDigestParams = hasDigestSearchParams(searchParams);
+  const storedDigestState = restoreDigestPageState();
+  const initialFilters = hasExplicitDigestParams
+    ? buildPaperFiltersFromSearchParams(searchParams)
+    : storedDigestState?.filters ?? buildPaperFiltersFromSearchParams(searchParams);
+  const canRestoreDigestSnapshot = Boolean(storedDigestState && arePaperFiltersEqual(storedDigestState.filters, initialFilters));
+  const storedDigestCache = canRestoreDigestSnapshot ? restoreDigestPageCache() : null;
+  const initialLoadedGroups = storedDigestCache?.loadedGroups || storedDigestCache?.overview?.loaded_groups || [];
+  const [overview, setOverview] = useState<PaperLibraryOverview | null>(storedDigestCache?.overview ?? null);
+  const [loadedGroups, setLoadedGroups] = useState<Record<string, PaperLibraryGroup>>(() => buildLoadedGroupMap(initialLoadedGroups));
+  const [filters, setFilters] = useState<PaperFilters>(initialFilters);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [pushTargetUserId, setPushTargetUserId] = useState("");
   const [pushNote, setPushNote] = useState("");
   const [pushMessage, setPushMessage] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [expandedDates, setExpandedDates] = useState<string[]>(() => parseExpandedDates(searchParams.get("expand")));
+  const [loadingOverview, setLoadingOverview] = useState(storedDigestCache?.overview ? false : true);
+  const [refreshingOverview, setRefreshingOverview] = useState(false);
+  const [loadingGroupDates, setLoadingGroupDates] = useState<string[]>([]);
+  const [pendingFavoriteIds, setPendingFavoriteIds] = useState<number[]>([]);
   const [exportMessage, setExportMessage] = useState("");
-  const [activeRailDate, setActiveRailDate] = useState(searchParams.get("date") || "");
+  const [favoriteToast, setFavoriteToast] = useState<ToastState | null>(null);
+  const [activeRailDate, setActiveRailDate] = useState(
+    canRestoreDigestSnapshot ? storedDigestState?.activeRailDate || initialFilters.publishDate : initialFilters.publishDate,
+  );
+  const [expandedPublishDates, setExpandedPublishDates] = useState<string[]>(
+    canRestoreDigestSnapshot ? storedDigestState?.expandedPublishDates || [] : [],
+  );
+  const [requestVersion, setRequestVersion] = useState(0);
+  const deferredQuery = useDeferredValue(filters.query.trim());
+  const lastLoadedSignatureRef = useRef(storedDigestCache?.overview ? getPaperFiltersSignature(initialFilters) : "");
+  const restoreScrollYRef = useRef(canRestoreDigestSnapshot ? storedDigestState?.scrollY || 0 : 0);
+  const shouldRestoreScrollRef = useRef(Boolean(canRestoreDigestSnapshot && storedDigestCache?.overview));
 
-  async function load() {
-    setLoading(true);
-    const allRecords = await fetchAllPaperDirectory();
-    const validKeys = new Set(allRecords.map(getPaperSelectionKey));
-    setAllPapers(allRecords);
-    setAllDates(collectUniqueValues(allRecords.map((item) => item.digest_date)));
-    setSelectedKeys((current) => current.filter((key) => validKeys.has(key)));
-    setLoading(false);
-  }
+  const appliedFilters: PaperFilters = {
+    ...filters,
+    query: deferredQuery,
+  };
+  const filterSignature = getPaperFiltersSignature(appliedFilters);
+  const groupSummaries = overview?.groups || [];
+  const publishDateOptions = overview?.available_publish_dates || [];
+  const categoryOptions = overview?.available_categories || [];
+  const tagOptions = overview?.available_tags || [];
+  const loadedPapers = collectLoadedPapers(loadedGroups, groupSummaries);
+  const visibleLoadedPapers = collectVisibleLoadedPapers(loadedGroups, expandedPublishDates, groupSummaries);
+  const selectedKeySet = new Set(selectedKeys);
+  const pendingFavoriteIdSet = new Set(pendingFavoriteIds);
+  const allVisibleSelected = visibleLoadedPapers.length > 0 && visibleLoadedPapers.every((paper) => selectedKeySet.has(getPaperSelectionKey(paper)));
 
   useEffect(() => {
-    void load();
-  }, []);
+    if (!hasDigestSearchParams(searchParams)) {
+      return;
+    }
+    const nextFilters = buildPaperFiltersFromSearchParams(searchParams);
+    setFilters((current) => (arePaperFiltersEqual(current, nextFilters) ? current : nextFilters));
+  }, [searchParams]);
 
   useEffect(() => {
     if (user.role === "admin" && adminUsers.length && !pushTargetUserId) {
@@ -484,45 +371,195 @@ function DigestPage({ user }: { user: AuthUser }) {
   }, [adminUsers, pushTargetUserId, user.role]);
 
   useEffect(() => {
-    const nextFilters = {
-      query: searchParams.get("q") || "",
-      date: searchParams.get("date") || "",
-      category: searchParams.get("category") || "",
-      tag: searchParams.get("tag") || "",
-    };
-    setFilters((current) =>
-      current.query === nextFilters.query &&
-      current.date === nextFilters.date &&
-      current.category === nextFilters.category &&
-      current.tag === nextFilters.tag
-        ? current
-        : nextFilters,
-    );
-    const nextExpanded = parseExpandedDates(searchParams.get("expand"));
-    setExpandedDates((current) => (sameStringArray(current, nextExpanded) ? current : nextExpanded));
-    setActiveRailDate(searchParams.get("date") || "");
-  }, [searchParams]);
-
-  useEffect(() => {
     const next = new URLSearchParams();
     if (filters.query.trim()) next.set("q", filters.query.trim());
-    if (filters.date) next.set("date", filters.date);
+    if (filters.publishDate) next.set("publish_date", filters.publishDate);
     if (filters.category) next.set("category", filters.category);
     if (filters.tag) next.set("tag", filters.tag);
-    if (expandedDates.length) next.set("expand", expandedDates.join(","));
+    if (filters.sort !== "publish_date_desc") next.set("sort", filters.sort);
     setSearchParams(next, { replace: true });
-  }, [expandedDates, filters, setSearchParams]);
+  }, [filters, setSearchParams]);
+
+  useEffect(() => {
+    if (requestVersion === 0 && overview && lastLoadedSignatureRef.current === filterSignature) {
+      return;
+    }
+    let ignore = false;
+    if (lastLoadedSignatureRef.current !== filterSignature) {
+      restoreScrollYRef.current = 0;
+    }
+    if (overview) {
+      setRefreshingOverview(true);
+    } else {
+      setLoadingOverview(true);
+    }
+
+    fetchPaperLibraryOverview({
+      q: appliedFilters.query,
+      publish_date: appliedFilters.publishDate,
+      category: appliedFilters.category,
+      tag: appliedFilters.tag,
+      sort: appliedFilters.sort,
+      initial_group_count: DIGEST_INITIAL_GROUP_COUNT,
+    })
+      .then((response) => {
+        if (ignore) {
+          return;
+        }
+        setOverview(response);
+        setLoadedGroups(buildLoadedGroupMap(response.loaded_groups));
+        setExpandedPublishDates((current) =>
+          sanitizeExpandedPublishDates(
+            appliedFilters.publishDate
+              ? [appliedFilters.publishDate]
+              : current.length
+                ? current
+                : response.loaded_groups.map((group) => group.publish_date),
+            response.groups,
+          ),
+        );
+        setActiveRailDate((current) => pickActiveRailDate(current, appliedFilters.publishDate, response.groups));
+        lastLoadedSignatureRef.current = filterSignature;
+        shouldRestoreScrollRef.current = true;
+      })
+      .catch(() => {
+        if (ignore) {
+          return;
+        }
+        setOverview((current) => current);
+      })
+      .finally(() => {
+        if (ignore) {
+          return;
+        }
+        setLoadingOverview(false);
+        setRefreshingOverview(false);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [
+    appliedFilters.category,
+    appliedFilters.publishDate,
+    appliedFilters.query,
+    appliedFilters.sort,
+    appliedFilters.tag,
+    filterSignature,
+    overview,
+    requestVersion,
+  ]);
+
+  useEffect(() => {
+    const validKeys = new Set(loadedPapers.map(getPaperSelectionKey));
+    setSelectedKeys((current) => {
+      const next = current.filter((key) => validKeys.has(key));
+      if (next.length === current.length && next.every((key, index) => key === current[index])) {
+        return current;
+      }
+      return next;
+    });
+  }, [loadedPapers]);
+
+  useEffect(() => {
+    persistDigestPageState({
+      filters,
+      activeRailDate,
+      expandedPublishDates,
+      scrollY: window.scrollY,
+    });
+  }, [filters, activeRailDate, expandedPublishDates]);
+
+  useEffect(() => {
+    if (!overview) {
+      return;
+    }
+    persistDigestPageCache({
+      overview,
+      loadedGroups: groupSummaries
+        .map((group) => loadedGroups[group.publish_date])
+        .filter((group): group is PaperLibraryGroup => Boolean(group)),
+    });
+  }, [groupSummaries, loadedGroups, overview]);
+
+  useEffect(() => {
+    let scrollPersistTimer = 0;
+    const persistCurrentScroll = () => {
+      persistDigestPageState({
+        filters,
+        activeRailDate,
+        expandedPublishDates,
+        scrollY: window.scrollY,
+      });
+    };
+    const scheduleScrollPersist = () => {
+      if (scrollPersistTimer) {
+        return;
+      }
+      scrollPersistTimer = window.setTimeout(() => {
+        scrollPersistTimer = 0;
+        persistCurrentScroll();
+      }, 120);
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        persistCurrentScroll();
+      }
+    };
+
+    window.addEventListener("scroll", scheduleScrollPersist, { passive: true });
+    window.addEventListener("pagehide", persistCurrentScroll);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      if (scrollPersistTimer) {
+        window.clearTimeout(scrollPersistTimer);
+      }
+      persistCurrentScroll();
+      window.removeEventListener("scroll", scheduleScrollPersist);
+      window.removeEventListener("pagehide", persistCurrentScroll);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [filters, activeRailDate, expandedPublishDates]);
+
+  useEffect(() => {
+    if (!overview || !shouldRestoreScrollRef.current) {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: restoreScrollYRef.current, left: 0, behavior: "auto" });
+    });
+    shouldRestoreScrollRef.current = false;
+  }, [loadedGroups, overview]);
+
+  useEffect(() => {
+    if (!favoriteToast) {
+      return;
+    }
+    const timer = window.setTimeout(() => setFavoriteToast(null), DIGEST_TOAST_DURATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [favoriteToast]);
 
   async function toggleFavorite(item: PaperItem) {
-    if (item.is_favorited) {
-      await request(`/api/favorites/${item.id}`, { method: "DELETE" });
-    } else {
-      await request("/api/favorites", {
-        method: "POST",
-        body: JSON.stringify({ paper_id: item.id }),
-      });
+    if (pendingFavoriteIdSet.has(item.id)) {
+      return;
     }
-    await load();
+    setPendingFavoriteIds((current) => [...current, item.id]);
+    try {
+      await toggleFavoriteRequest(item.id, item.is_favorited);
+      setLoadedGroups((current) => updateFavoriteStateInGroups(current, item.id, !item.is_favorited));
+      setFavoriteToast({
+        kind: "success",
+        message: item.is_favorited ? "已取消收藏" : "已加入收藏",
+      });
+    } catch (error) {
+      setFavoriteToast({
+        kind: "error",
+        message: error instanceof Error ? error.message : "收藏状态保存失败",
+      });
+    } finally {
+      setPendingFavoriteIds((current) => current.filter((value) => value !== item.id));
+    }
   }
 
   function togglePaperSelection(item: PaperItem) {
@@ -547,7 +584,7 @@ function DigestPage({ user }: { user: AuthUser }) {
   }
 
   function runSelectedExport(kind: "metadata" | "doi-list") {
-    const selected = allPapers.filter((item) => selectedKeys.includes(getPaperSelectionKey(item)));
+    const selected = loadedPapers.filter((item) => selectedKeys.includes(getPaperSelectionKey(item)));
     if (!selected.length) {
       setExportMessage("先选择要导出的文献。");
       return;
@@ -564,76 +601,83 @@ function DigestPage({ user }: { user: AuthUser }) {
       setPushMessage("先填写接收账户 ID。");
       return;
     }
-    await request("/api/admin/pushes", {
-      method: "POST",
-      body: JSON.stringify({
-        paper_id: item.id,
-        recipient_user_id: Number(pushTargetUserId),
-        note: pushNote,
-      }),
+    await createPush({
+      paper_id: item.id,
+      recipient_user_id: Number(pushTargetUserId),
+      note: pushNote,
     });
     setPushMessage(`已将《${item.title_en}》推送给账户 ${pushTargetUserId}。`);
   }
 
-  const selectedKeySet = new Set(selectedKeys);
-  const filteredPapers = allPapers.filter((paper) => matchesPaperFilters(paper, filters));
-  const categoryOptions = collectUniqueValues(allPapers.map((paper) => paper.category));
-  const tagOptions = collectUniqueValues(allPapers.flatMap((paper) => paper.tags));
-  const hasActiveFilters = Boolean(filters.query.trim() || filters.date || filters.category || filters.tag);
-  const latestDate = allDates[0] || "";
-  const visibleDates = filters.date ? [filters.date] : allDates.slice(0, 3);
-  const groupedPapers = visibleDates
-    .map((date) => ({
-      date,
-      items: filteredPapers.filter((paper) => paper.digest_date === date).sort(comparePaperPriority),
-    }))
-    .filter((group) => group.items.length > 0);
-  const filteredSelectionKeys = groupedPapers.flatMap((group) => group.items.map(getPaperSelectionKey));
-  const allFilteredSelected = filteredSelectionKeys.length > 0 && filteredSelectionKeys.every((key) => selectedKeySet.has(key));
-
-  useEffect(() => {
-    if (filters.date) {
-      setActiveRailDate(filters.date);
+  async function ensureGroupLoaded(publishDate: string) {
+    if (loadedGroups[publishDate]) {
       return;
     }
-    if (groupedPapers.length && !groupedPapers.some((group) => group.date === activeRailDate)) {
-      setActiveRailDate(groupedPapers[0].date);
+    setLoadingGroupDates((current) => (current.includes(publishDate) ? current : [...current, publishDate]));
+    try {
+      const group = await fetchPaperLibraryGroup(publishDate, {
+        q: appliedFilters.query,
+        category: appliedFilters.category,
+        tag: appliedFilters.tag,
+        sort: appliedFilters.sort,
+      });
+      setLoadedGroups((current) => ({ ...current, [publishDate]: group }));
+    } finally {
+      setLoadingGroupDates((current) => current.filter((value) => value !== publishDate));
     }
-  }, [activeRailDate, filters.date, groupedPapers]);
+  }
 
-  function scrollToDate(date: string) {
-    setActiveRailDate(date);
-    document.getElementById(`digest-day-${date}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  async function scrollToDate(publishDate: string) {
+    setActiveRailDate(publishDate);
+    setExpandedPublishDates((current) => ensurePublishDateExpanded(current, publishDate, groupSummaries));
+    await ensureGroupLoaded(publishDate);
+    window.requestAnimationFrame(() => {
+      document.getElementById(`digest-day-${publishDate}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  async function togglePublishDateGroup(publishDate: string) {
+    const isExpanded = expandedPublishDates.includes(publishDate);
+    if (isExpanded) {
+      setExpandedPublishDates((current) => current.filter((value) => value !== publishDate));
+      return;
+    }
+    setExpandedPublishDates((current) => ensurePublishDateExpanded(current, publishDate, groupSummaries));
+    setActiveRailDate(publishDate);
+    await ensureGroupLoaded(publishDate);
   }
 
   function clearFilters() {
-    setFilters({ query: "", date: "", category: "", tag: "" });
+    setFilters((current) => ({
+      query: "",
+      publishDate: "",
+      category: "",
+      tag: "",
+      sort: current.sort,
+    }));
   }
 
   function clearSelection() {
     setSelectedKeys([]);
   }
 
-  function toggleDayExpanded(date: string) {
-    setExpandedDates((current) => (current.includes(date) ? current.filter((item) => item !== date) : [...current, date]));
-  }
-
   return (
     <div className="content-stack">
+      {favoriteToast ? <ToastBanner toast={favoriteToast} onClose={() => setFavoriteToast(null)} /> : null}
       <section className="card">
         <div className="card-header">
           <div>
-            <p className="eyebrow">共享订阅池</p>
+            <p className="eyebrow">本地导入池</p>
             <h2>今日文献</h2>
           </div>
           <div className="actions">
-            <button className="ghost-button" onClick={() => void load()}>刷新最近 3 天</button>
+            <button className="ghost-button" onClick={() => setRequestVersion((current) => current + 1)}>刷新本地目录</button>
             <button className="ghost-button" onClick={clearFilters}>清空筛选</button>
           </div>
         </div>
         <div className="stats-strip">
-          <MetricTile label="最近目录" value={allDates.length ? `${Math.min(3, allDates.length)} 天` : "0 天"} />
-          <MetricTile label="筛选结果" value={String(filteredPapers.length)} />
+          <MetricTile label="发布日期" value={publishDateOptions.length ? `${publishDateOptions.length} 天` : "0 天"} />
+          <MetricTile label="筛选结果" value={String(overview?.total_papers || 0)} />
           <MetricTile label="已选条目" value={String(selectedKeys.length)} />
         </div>
         {user.role === "admin" ? (
@@ -654,9 +698,9 @@ function DigestPage({ user }: { user: AuthUser }) {
             value={filters.query}
             onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))}
           />
-          <select value={filters.date} onChange={(event) => setFilters((current) => ({ ...current, date: event.target.value }))}>
-            <option value="">最近 3 天</option>
-            {allDates.map((option) => (
+          <select value={filters.publishDate} onChange={(event) => setFilters((current) => ({ ...current, publishDate: event.target.value }))}>
+            <option value="">全部发布日期</option>
+            {publishDateOptions.map((option) => (
               <option key={option} value={option}>{option}</option>
             ))}
           </select>
@@ -672,11 +716,15 @@ function DigestPage({ user }: { user: AuthUser }) {
               <option key={option} value={option}>{option}</option>
             ))}
           </select>
+          <select value={filters.sort} onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value as DigestSortKey }))}>
+            <option value="publish_date_desc">发布日期：从新到旧</option>
+            <option value="publish_date_asc">发布日期：从旧到新</option>
+          </select>
         </div>
         <div className="selection-toolbar">
           <label className="check-row">
-            <input type="checkbox" checked={allFilteredSelected} onChange={() => togglePaperBatch(groupedPapers.flatMap((group) => group.items))} />
-            <span>全选当前筛选</span>
+            <input type="checkbox" checked={allVisibleSelected} onChange={() => togglePaperBatch(visibleLoadedPapers)} />
+            <span>全选当前已加载</span>
           </label>
           <div className="actions">
             <span className="selection-copy">已选 {selectedKeys.length} 篇</span>
@@ -686,57 +734,67 @@ function DigestPage({ user }: { user: AuthUser }) {
           </div>
         </div>
         {exportMessage ? <p className="success-text">{exportMessage}</p> : null}
-        {loading ? <div className="small-copy">正在加载文献目录与历史日期…</div> : null}
+        {loadingOverview ? <div className="small-copy">正在按发布日期加载文献目录…</div> : null}
+        {refreshingOverview ? <div className="small-copy">正在更新筛选结果…</div> : null}
         <div className="digest-layout">
           <aside className="date-rail desktop-only">
-            {groupedPapers.map((group) => (
-              <button
-                className={`date-rail-item${group.date === activeRailDate ? " is-active" : ""}`}
-                key={group.date}
-                onClick={() => scrollToDate(group.date)}
+            {groupSummaries.map((group) => (
+                <button
+                className={`date-rail-item${group.publish_date === activeRailDate ? " is-active" : ""}`}
+                key={group.publish_date}
+                onClick={() => void scrollToDate(group.publish_date)}
               >
                 <span className="date-rail-marker"><span /></span>
-                <span className="date-rail-label">{formatDigestDate(group.date)}</span>
+                <span className="date-rail-label">{formatDigestDate(group.publish_date)}</span>
               </button>
             ))}
           </aside>
           <div className="digest-sections">
             <div className="mobile-day-strip mobile-only">
-              {groupedPapers.map((group) => (
+              {groupSummaries.map((group) => (
                 <button
-                  className={`date-chip${group.date === activeRailDate ? " is-active" : ""}`}
-                  key={group.date}
-                  onClick={() => scrollToDate(group.date)}
+                  className={`date-chip${group.publish_date === activeRailDate ? " is-active" : ""}`}
+                  key={group.publish_date}
+                  onClick={() => void scrollToDate(group.publish_date)}
                 >
-                  {formatDigestDate(group.date)}
+                  {formatDigestDate(group.publish_date)}
                 </button>
               ))}
             </div>
-            {groupedPapers.length === 0 ? <EmptyState title="最近 3 天没有符合条件的文献" description="调整搜索、日期、分类或标签筛选后再试。" /> : null}
-            {groupedPapers.map((group) => {
-              const shouldCollapse = group.date === latestDate && !hasActiveFilters && group.items.length > 10 && !expandedDates.includes(group.date);
-              const visibleItems = shouldCollapse ? group.items.slice(0, 10) : group.items;
-              const canToggle = group.date === latestDate && !hasActiveFilters && group.items.length > 10;
+            {groupSummaries.length === 0 ? <EmptyState title="当前没有符合条件的文献" description="调整搜索、发布日期、分类或标签筛选后再试。" /> : null}
+            {groupSummaries.map((group) => {
+              const isExpanded = expandedPublishDates.includes(group.publish_date);
+              const groupData = loadedGroups[group.publish_date];
+              const isLoadingGroup = loadingGroupDates.includes(group.publish_date);
               return (
-                <section className="day-section subpanel" key={group.date} id={`digest-day-${group.date}`}>
+                <section className="day-section subpanel" key={group.publish_date} id={`digest-day-${group.publish_date}`}>
                   <div className="day-section-header">
                     <div>
-                      <p className="eyebrow">{group.date === latestDate ? "今日" : "历史"}</p>
-                      <h3>{formatDigestDate(group.date)}</h3>
+                      <p className="eyebrow">发布日期</p>
+                      <h3>{formatDigestDate(group.publish_date)}</h3>
                     </div>
                     <div className="day-section-meta">
-                      <span className="status-pill is-idle">{group.items.length} 篇</span>
-                      {canToggle ? <button className="table-link" onClick={() => toggleDayExpanded(group.date)}>{shouldCollapse ? "显示全部" : "收起今日"}</button> : null}
+                      <span className="status-pill is-idle">{group.paper_count} 篇</span>
+                      <button className="ghost-button day-section-toggle" onClick={() => void togglePublishDateGroup(group.publish_date)}>
+                        {isExpanded ? "收起" : "展开"}
+                      </button>
                     </div>
                   </div>
-                  <PaperTable
-                    papers={visibleItems}
-                    selectedKeys={selectedKeySet}
-                    onToggleSelect={togglePaperSelection}
-                    onToggleSelectAll={togglePaperBatch}
-                    onFavorite={toggleFavorite}
-                    onPush={user.role === "admin" ? pushPaper : undefined}
-                  />
+                  {isExpanded ? (
+                    isLoadingGroup && !groupData ? (
+                      <div className="small-copy">正在加载该发布日期的文献…</div>
+                    ) : (
+                      <PaperTable
+                        papers={groupData?.items || []}
+                        selectedKeys={selectedKeySet}
+                        pendingFavoriteIds={pendingFavoriteIdSet}
+                        onToggleSelect={togglePaperSelection}
+                        onToggleSelectAll={togglePaperBatch}
+                        onFavorite={toggleFavorite}
+                        onPush={user.role === "admin" ? pushPaper : undefined}
+                      />
+                    )
+                  ) : null}
                 </section>
               );
             })}
@@ -750,6 +808,7 @@ function DigestPage({ user }: { user: AuthUser }) {
 function PaperTable({
   papers,
   selectedKeys,
+  pendingFavoriteIds,
   onToggleSelect,
   onToggleSelectAll,
   onFavorite,
@@ -757,6 +816,7 @@ function PaperTable({
 }: {
   papers: PaperItem[];
   selectedKeys: Set<string>;
+  pendingFavoriteIds: Set<number>;
   onToggleSelect: (item: PaperItem) => void;
   onToggleSelectAll: (items: PaperItem[]) => void;
   onFavorite: (item: PaperItem) => void;
@@ -769,43 +829,48 @@ function PaperTable({
       {papers.length === 0 ? <EmptyState title="当前没有可展示的文献" description="调整筛选条件后再刷新，或等待新的 digest 导入。" /> : null}
       <div className="mobile-only">
         <div className="mobile-stack">
-          {papers.map((paper) => (
-            <article className="mobile-card paper-card" key={`${paper.digest_date}-${paper.id}`}>
-              <div className="mobile-card-head">
-                <label className="check-row card-check">
-                  <input type="checkbox" checked={selectedKeys.has(getPaperSelectionKey(paper))} onChange={() => onToggleSelect(paper)} />
-                </label>
-                <div>
-                  <p className="eyebrow">{paper.journal}</p>
-                  <strong>{paper.publish_date}</strong>
-                </div>
-                <span className={`status-pill ${paper.is_favorited ? "is-live" : "is-idle"}`}>
-                  {paper.is_favorited ? "已收藏" : paper.interest_level}
-                </span>
+          {papers.map((paper) => {
+            const compactTags = compactPaperTags(paper.tags);
+            return (
+            <article className="mobile-card paper-card" key={paper.id}>
+              <div className="mobile-card-rail" aria-hidden="true">
+                <span />
               </div>
-              <h3>{paper.title_en}</h3>
-              <p className="mobile-summary">{paper.title_zh}</p>
-              <p className="small-copy">{paper.summary_zh}</p>
-              <div className="mobile-meta-grid">
-                <div>
-                  <span className="meta-label">兴趣标签</span>
-                  <strong>{paper.interest_tag}</strong>
+              <div className="mobile-card-body">
+                <div className="mobile-card-head mobile-paper-head">
+                  <label className="check-row card-check">
+                    <input type="checkbox" checked={selectedKeys.has(getPaperSelectionKey(paper))} onChange={() => onToggleSelect(paper)} />
+                  </label>
+                  <div className="mobile-paper-copy">
+                    <h3>{paper.title_en}</h3>
+                    <p className="mobile-summary">{paper.title_zh}</p>
+                  </div>
+                  <span className={`journal-marker${isFlagshipJournal(paper.journal) ? " is-flagship" : ""}`} title={paper.journal}>
+                    {formatJournalMarker(paper.journal)}
+                  </span>
                 </div>
-                <div>
-                  <span className="meta-label">分类</span>
-                  <strong>{paper.category || "未分类"}</strong>
+                <div className="mobile-paper-meta">
+                  <span>{paper.interest_level}</span>
+                  <span>{paper.interest_tag}</span>
+                  <span>{paper.category || "未分类"}</span>
                 </div>
-              </div>
-              <div className="tag-list">
-                {paper.tags.length ? paper.tags.map((tag) => <span key={tag}>{tag}</span>) : <span>暂无标签</span>}
-              </div>
-              <div className="mobile-card-actions">
-                <button className="table-link" onClick={() => onFavorite(paper)}>{paper.is_favorited ? "取消收藏" : "加入收藏"}</button>
-                {onPush ? <button className="table-link" onClick={() => onPush(paper)}>推送</button> : null}
-                <a className="table-link link-button" href={paper.article_url} target="_blank" rel="noreferrer">Open</a>
+                <p className="small-copy mobile-paper-blurb">{paper.summary_zh}</p>
+                {compactTags.length ? (
+                  <div className="tag-list tag-list-compact">
+                    {compactTags.map((tag) => <span key={`${paper.id}-${tag}`}>{tag}</span>)}
+                  </div>
+                ) : null}
+                <div className="mobile-card-actions paper-card-actions">
+                  <button className="table-link" onClick={() => onFavorite(paper)} disabled={pendingFavoriteIds.has(paper.id)}>
+                    {pendingFavoriteIds.has(paper.id) ? "处理中…" : paper.is_favorited ? "取消收藏" : "加入收藏"}
+                  </button>
+                  {onPush ? <button className="table-link" onClick={() => onPush(paper)}>推送</button> : null}
+                  <a className="table-link link-button" href={paper.article_url} target="_blank" rel="noreferrer">Open</a>
+                </div>
               </div>
             </article>
-          ))}
+          );
+          })}
         </div>
       </div>
       <div className="desktop-only">
@@ -825,11 +890,15 @@ function PaperTable({
           </thead>
           <tbody>
             {papers.map((paper) => (
-              <tr key={`${paper.digest_date}-${paper.id}`}>
+              <tr key={paper.id}>
                 <td><input type="checkbox" checked={selectedKeys.has(getPaperSelectionKey(paper))} onChange={() => onToggleSelect(paper)} /></td>
-                <td><button className="table-link" onClick={() => onFavorite(paper)}>{paper.is_favorited ? "取消" : "收藏"}</button></td>
+                <td>
+                  <button className="table-link" onClick={() => onFavorite(paper)} disabled={pendingFavoriteIds.has(paper.id)}>
+                    {pendingFavoriteIds.has(paper.id) ? "处理中…" : paper.is_favorited ? "取消" : "收藏"}
+                  </button>
+                </td>
                 {onPush ? <td><button className="table-link" onClick={() => onPush(paper)}>推送</button></td> : null}
-                <td>{paper.journal}<br /><span className="muted">{paper.publish_date}</span></td>
+                <td>{paper.journal}<br /><span className="muted">{formatDigestDate(paper.publish_date_day)}</span></td>
                 <td>{paper.interest_level}<br /><span className="muted">{paper.interest_tag}</span></td>
                 <td>{paper.title_en}<div className="small-copy">{paper.summary_zh}</div></td>
                 <td>{paper.title_zh}</td>
@@ -844,14 +913,22 @@ function PaperTable({
   );
 }
 
+function ToastBanner({ toast, onClose }: { toast: ToastState; onClose: () => void }) {
+  return (
+    <div className={`top-toast is-${toast.kind}`} role="status" aria-live="polite">
+      <span>{toast.message}</span>
+      <button className="top-toast-close" onClick={onClose} aria-label="关闭提示">×</button>
+    </div>
+  );
+}
+
 function PushInboxPage({ user }: { user: AuthUser }) {
   const adminUsers = useAdminUsers(user.role === "admin");
   const [pushes, setPushes] = useState<PaperPushItem[]>([]);
   const [targetUserId, setTargetUserId] = useState(String(user.id));
 
   async function load() {
-    const suffix = user.role === "admin" ? `?user_id=${targetUserId}` : "";
-    setPushes(await request<PaperPushItem[]>(`/api/pushes${suffix}`));
+    setPushes(await listPushes(user.role === "admin" ? targetUserId : undefined));
   }
 
   useEffect(() => {
@@ -865,10 +942,7 @@ function PushInboxPage({ user }: { user: AuthUser }) {
   }, [adminUsers, targetUserId, user.role]);
 
   async function markRead(push: PaperPushItem, isRead: boolean) {
-    await request<PaperPushItem>(`/api/pushes/${push.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ is_read: isRead }),
-    });
+    await updatePush(push.id, isRead);
     await load();
   }
 
@@ -971,13 +1045,23 @@ function FavoritesPage({ user }: { user: AuthUser }) {
     review_final_category: "",
     reviewer_notes: "",
   });
+  const [reviewOptionsError, setReviewOptionsError] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
   const [saveError, setSaveError] = useState("");
   const [savingPaperId, setSavingPaperId] = useState<number | null>(null);
 
+  async function loadReviewOptions() {
+    try {
+      const next = await fetchFavoriteReviewOptions();
+      setReviewOptions(next);
+      setReviewOptionsError("");
+    } catch (error) {
+      setReviewOptionsError(error instanceof Error ? error.message : "人工备注选项加载失败");
+    }
+  }
+
   async function load() {
-    const query = user.role === "admin" ? `?user_id=${targetUserId}` : "";
-    const next = await request<FavoriteItem[]>(`/api/favorites${query}`);
+    const next = await listFavorites(user.role === "admin" ? targetUserId : undefined);
     setFavorites(next);
     setSelectedIds((current) => current.filter((id) => next.some((favorite) => favorite.id === id)));
   }
@@ -990,16 +1074,7 @@ function FavoritesPage({ user }: { user: AuthUser }) {
   }, [targetUserId]);
 
   useEffect(() => {
-    request<FavoriteReviewOptions>("/api/favorites/review-options")
-      .then(setReviewOptions)
-      .catch(() =>
-        setReviewOptions({
-          interest_levels: [],
-          interest_tags: [],
-          review_final_decisions: [],
-          review_final_categories: [],
-        }),
-      );
+    void loadReviewOptions();
   }, []);
 
   useEffect(() => {
@@ -1043,6 +1118,14 @@ function FavoritesPage({ user }: { user: AuthUser }) {
   }
 
   function startEdit(favorite: FavoriteItem) {
+    if (
+      !reviewOptions.interest_levels.length &&
+      !reviewOptions.interest_tags.length &&
+      !reviewOptions.review_final_decisions.length &&
+      !reviewOptions.review_final_categories.length
+    ) {
+      void loadReviewOptions();
+    }
     setEditingPaperId(favorite.paper_id);
     setDraft({
       review_interest_level: favorite.review_interest_level || favorite.interest_level,
@@ -1065,18 +1148,18 @@ function FavoritesPage({ user }: { user: AuthUser }) {
   }
 
   async function saveFavoriteReview(favorite: FavoriteItem) {
-    const query = user.role === "admin" ? `?user_id=${targetUserId}` : "";
     setSavingPaperId(favorite.paper_id);
     setSaveMessage("");
     setSaveError("");
     try {
-      const updated = await request<FavoriteItem>(`/api/favorites/${favorite.paper_id}${query}`, {
-        method: "PATCH",
-        body: JSON.stringify(draft),
-      });
+      const updated = await saveFavoriteReviewRequest(
+        favorite.paper_id,
+        draft,
+        user.role === "admin" ? targetUserId : undefined,
+      );
       setFavorites((current) => current.map((item) => (item.id === updated.id ? updated : item)));
       setEditingPaperId(null);
-      setSaveMessage("已保存，修改会延迟生效，系统会在每日 00:00 统一汇总到审查表。");
+      setSaveMessage("已保存，修改会保留在当前工作台数据中，并用于后续人工导出。");
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "保存失败");
     } finally {
@@ -1092,7 +1175,7 @@ function FavoritesPage({ user }: { user: AuthUser }) {
       <div className="card-header">
         <div>
           <p className="eyebrow">个人收藏</p>
-          <h2>收藏文献</h2>
+          <h2>收藏与人工备注</h2>
         </div>
         {user.role === "admin" ? (
           <UserSelect users={adminUsers} value={targetUserId} onChange={setTargetUserId} placeholder="选择查看账户" />
@@ -1102,6 +1185,7 @@ function FavoritesPage({ user }: { user: AuthUser }) {
         <MetricTile label="收藏数" value={String(favorites.length)} />
         <MetricTile label="查看账户" value={targetLabel} />
       </div>
+      {reviewOptionsError ? <div className="notice-banner is-error">{reviewOptionsError}</div> : null}
       {saveMessage ? <div className="notice-banner is-success">{saveMessage}</div> : null}
       {saveError ? <div className="notice-banner is-error">{saveError}</div> : null}
       <div className="selection-toolbar">
@@ -1214,6 +1298,7 @@ function FavoriteReviewSummary({ favorite }: { favorite: FavoriteItem }) {
   const effectiveInterestLevel = favorite.review_interest_level || favorite.interest_level;
   const effectiveInterestTag = favorite.review_interest_tag || favorite.interest_tag;
   const effectiveGroup = favorite.review_final_category || favorite.category;
+  const effectiveDecision = formatReviewDecision(favorite.review_final_decision);
 
   return (
     <div className="favorite-review-summary">
@@ -1221,15 +1306,15 @@ function FavoriteReviewSummary({ favorite }: { favorite: FavoriteItem }) {
         <span>{effectiveInterestLevel}</span>
         <span>{effectiveInterestTag}</span>
         <span>{effectiveGroup}</span>
-        {favorite.review_final_decision ? <span>{favorite.review_final_decision}</span> : null}
+        {effectiveDecision ? <span>{effectiveDecision}</span> : null}
       </div>
       <div className="small-copy">
-        {favorite.reviewer_notes ? favorite.reviewer_notes : "未提交人工审查修改。"}
+        {favorite.reviewer_notes ? favorite.reviewer_notes : "尚未添加人工备注。"}
       </div>
       {favorite.review_updated_at ? (
         <div className="small-copy">最近修改：{favorite.review_updated_at}</div>
       ) : (
-        <div className="small-copy">保存后会延迟生效，并在每日 00:00 汇总到审查表。</div>
+        <div className="small-copy">保存后会保留在当前工作台数据中，并用于后续导出。</div>
       )}
     </div>
   );
@@ -1272,11 +1357,11 @@ function FavoriteReviewEditor({
           </select>
         </label>
         <label>
-          <span>审查结论</span>
+          <span>处理结果</span>
           <select value={draft.review_final_decision} onChange={(event) => onChange("review_final_decision", event.target.value)}>
             <option value="">暂不指定</option>
             {options.review_final_decisions.map((option) => (
-              <option key={option} value={option}>{option}</option>
+              <option key={option} value={option}>{formatReviewDecision(option)}</option>
             ))}
           </select>
         </label>
@@ -1303,152 +1388,6 @@ function FavoriteReviewEditor({
         <button className="ghost-button" onClick={onCancel} disabled={disabled}>取消</button>
         <button className="primary-button" onClick={onSave} disabled={disabled}>{disabled ? "保存中…" : "保存修改"}</button>
       </div>
-    </div>
-  );
-}
-
-function AnalyticsPage({ user }: { user: AuthUser }) {
-  const adminUsers = useAdminUsers(user.role === "admin");
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [globalStats, setGlobalStats] = useState<AnalyticsResponse | null>(null);
-  const [userStats, setUserStats] = useState<AnalyticsResponse | null>(null);
-  const [cns, setCns] = useState<TrendPoint[]>([]);
-  const [targetUserId, setTargetUserId] = useState(String(user.id));
-
-  async function load() {
-    setGlobalStats(await request<AnalyticsResponse>(`/api/analytics/global?period=weekly&month=${month}`));
-    setUserStats(await request<AnalyticsResponse>(`/api/analytics/users/${targetUserId}/favorites?period=weekly&month=${month}`));
-    setCns(await request<TrendPoint[]>("/api/analytics/cns-trends?months=12"));
-  }
-
-  useEffect(() => {
-    void load();
-  }, [month, targetUserId]);
-
-  useEffect(() => {
-    if (user.role === "admin" && adminUsers.length && !targetUserId) {
-      setTargetUserId(String(adminUsers[0].id));
-    }
-  }, [adminUsers, targetUserId, user.role]);
-
-  const cnsGroups = groupSeriesByJournal(cns);
-
-  return (
-    <div className="content-stack">
-      <section className="card analytics-overview">
-        <div className="card-header">
-          <div>
-            <p className="eyebrow">统计快照</p>
-            <h2>{month} 分析视图</h2>
-          </div>
-          <div className="actions">
-            <input value={month} onChange={(event) => setMonth(event.target.value)} />
-            {user.role === "admin" ? <UserSelect users={adminUsers} value={targetUserId} onChange={setTargetUserId} placeholder="选择统计账户" /> : null}
-          </div>
-        </div>
-        <div className="stats-strip">
-          <MetricTile label="全站文献" value={String(globalStats?.total_papers || 0)} />
-          <MetricTile label="收藏样本" value={String(userStats?.total_papers || 0)} />
-          <MetricTile label="CNS 点位" value={String(cns.length)} />
-        </div>
-      </section>
-      <div className="split-grid analytics-grid">
-      <section className="card">
-        <div className="card-header">
-          <div>
-            <p className="eyebrow">统计周期</p>
-            <h2>全站网络图</h2>
-          </div>
-          <span className="status-pill is-live">{month}</span>
-        </div>
-        <MetricRow label="纳入文献" value={String(globalStats?.total_papers || 0)} />
-        <NodeCloud title="关键词节点" nodes={globalStats?.nodes || []} />
-        <TrendList title="周趋势" series={globalStats?.series || []} variant="bar" />
-      </section>
-      <section className="card">
-        <div className="card-header">
-          <div>
-            <p className="eyebrow">个人收藏统计</p>
-            <h2>收藏网络与趋势</h2>
-          </div>
-          <span className="status-pill is-idle">user {targetUserId}</span>
-        </div>
-        <MetricRow label="收藏样本" value={String(userStats?.total_papers || 0)} />
-        <NodeCloud title="收藏关键词" nodes={userStats?.nodes || []} />
-        <TrendList title="收藏周趋势" series={userStats?.series || []} variant="bar" />
-      </section>
-      </div>
-      <section className="card">
-        <div className="card-header">
-          <div>
-            <p className="eyebrow">Cell / Nature / Science</p>
-            <h2>CNS 月趋势</h2>
-          </div>
-        </div>
-        <div className="journal-columns">
-          {cnsGroups.map((group) => (
-            <section className="subpanel" key={group.journal}>
-              <TrendList title={group.journal} series={group.points} variant="bar" />
-            </section>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function NodeCloud({ title, nodes }: { title: string; nodes: Array<{ key: string; label: string; weight: number }> }) {
-  return (
-    <div className="subpanel">
-      <h3>{title}</h3>
-      <div className="node-cloud">
-        {nodes.length === 0 ? <EmptyState title="暂无关键词" description="导入更多文献或调整周期后会生成节点权重。" compact /> : null}
-        {nodes.slice(0, 24).map((node) => (
-          <span key={node.key} style={{ fontSize: `${12 + Math.min(node.weight, 10) * 1.4}px` }}>
-            {node.label}
-            <strong>{node.weight}</strong>
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TrendList({
-  title,
-  series,
-  variant = "default",
-}: {
-  title: string;
-  series: TrendPoint[];
-  variant?: "default" | "bar";
-}) {
-  const maxValue = Math.max(...series.map((point) => point.value), 1);
-
-  return (
-    <div className="subpanel">
-      <h3>{title}</h3>
-      {series.length === 0 ? <EmptyState title="暂无趋势数据" description="当前筛选范围内还没有可视化点位。" compact /> : null}
-      <ul className="trend-list">
-        {series.map((point, index) => (
-          <li className={variant === "bar" ? "trend-item bar" : "trend-item"} key={`${point.label}-${point.journal || index}`}>
-            <div className="trend-copy">
-              <span>{point.label}{point.journal ? ` · ${point.journal}` : ""}</span>
-              {variant === "bar" ? <div className="trend-meter"><span style={{ width: `${(point.value / maxValue) * 100}%` }} /></div> : null}
-            </div>
-            <strong>{point.value}</strong>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function MetricRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="metric-row">
-      <span>{label}</span>
-      <strong>{value}</strong>
     </div>
   );
 }
@@ -1632,6 +1571,132 @@ function AdminUsersPage() {
   );
 }
 
+function AdminImportsPage() {
+  const [runs, setRuns] = useState<ImportRun[]>([]);
+  const [busyRunId, setBusyRunId] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function load() {
+    setRuns(await fetchImportRuns());
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function runCheck() {
+    setChecking(true);
+    setMessage("");
+    try {
+      const results = await checkImportRuns();
+      setMessage(formatImportSummary(results, "已完成最新运行检查"));
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "检查失败");
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function handleImport(runId: string, force: boolean) {
+    setBusyRunId(runId);
+    setMessage("");
+    try {
+      const result = force ? await reimportRun(runId) : await importRun(runId);
+      setMessage(formatImportSummary([result], force ? "已执行重导入" : "已执行导入"));
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "导入失败");
+    } finally {
+      setBusyRunId("");
+    }
+  }
+
+  return (
+    <div className="content-stack">
+      <section className="card">
+        <div className="card-header">
+          <div>
+            <p className="eyebrow">Producer Import</p>
+            <h2>导入与重导入</h2>
+          </div>
+          <div className="actions">
+            <button className="ghost-button" onClick={() => void load()}>刷新列表</button>
+            <button className="primary-button" onClick={() => void runCheck()} disabled={checking}>
+              {checking ? "检查中…" : "检查最新运行"}
+            </button>
+          </div>
+        </div>
+        <div className="stats-strip">
+          <MetricTile label="可导入日期" value={String(runs.length)} />
+          <MetricTile label="已对齐" value={String(runs.filter((run) => run.is_current).length)} />
+          <MetricTile label="待导入" value={String(runs.filter((run) => !run.is_current).length)} />
+        </div>
+        {message ? <div className="notice-banner is-success">{message}</div> : null}
+        <div className="table-shell">
+          {runs.length === 0 ? <EmptyState title="当前没有可导入运行" description="请确认 producer SQLite 已生成可用运行记录。" /> : null}
+          <div className="desktop-only">
+            <table>
+              <thead>
+                <tr>
+                  <th>日期</th>
+                  <th>运行</th>
+                  <th>记录数</th>
+                  <th>归档校验</th>
+                  <th>本地状态</th>
+                  <th>动作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((run) => (
+                  <tr key={`${run.digest_date}-${run.run_id}`}>
+                    <td>{run.digest_date}</td>
+                    <td>{run.run_id}<div className="small-copy">{run.updated_at_utc}</div></td>
+                    <td>{run.record_count}</td>
+                    <td>{run.validation_status}</td>
+                    <td>{run.is_current ? "已同步" : `当前 ${run.current_local_run_id || "未导入"}`}</td>
+                    <td>
+                      <button className="table-link" onClick={() => void handleImport(run.run_id, false)} disabled={busyRunId === run.run_id}>
+                        {busyRunId === run.run_id ? "处理中…" : "导入"}
+                      </button>
+                      <button className="table-link" onClick={() => void handleImport(run.run_id, true)} disabled={busyRunId === run.run_id}>
+                        重导入
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mobile-only">
+            <div className="mobile-stack">
+              {runs.map((run) => (
+                <article className="mobile-card" key={`${run.digest_date}-${run.run_id}`}>
+                  <div className="mobile-card-head">
+                    <div>
+                      <p className="eyebrow">{run.digest_date}</p>
+                      <strong>{run.run_id}</strong>
+                    </div>
+                    <span className={`status-pill ${run.is_current ? "is-live" : "is-idle"}`}>{run.is_current ? "已同步" : "待处理"}</span>
+                  </div>
+                  <p className="small-copy">记录数：{run.record_count}</p>
+                  <p className="small-copy">归档校验：{run.validation_status}</p>
+                  <p className="small-copy">本地运行：{run.current_local_run_id || "未导入"}</p>
+                  <div className="mobile-card-actions">
+                    <button className="table-link" onClick={() => void handleImport(run.run_id, false)} disabled={busyRunId === run.run_id}>导入</button>
+                    <button className="table-link" onClick={() => void handleImport(run.run_id, true)} disabled={busyRunId === run.run_id}>重导入</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function ExportsPage({ user }: { user: AuthUser }) {
   const [mappings, setMappings] = useState([
     { source: "journal", label: "期刊" },
@@ -1641,12 +1706,7 @@ function ExportsPage({ user }: { user: AuthUser }) {
   const [job, setJob] = useState<ExportJob | null>(null);
 
   async function exportCustom() {
-    setJob(
-      await request<ExportJob>("/api/exports/custom-table", {
-        method: "POST",
-        body: JSON.stringify({ columns: mappings, user_id: user.id }),
-      }),
-    );
+    setJob(await exportCustomTable(user.id, mappings));
   }
 
   function updateMapping(index: number, field: "source" | "label", value: string) {
@@ -1694,15 +1754,8 @@ function getPageMeta(pathname: string, user: AuthUser) {
   if (pathname.startsWith("/favorites")) {
     return {
       eyebrow: "Personal Signal",
-      title: "收藏行为回看",
-      description: "把个人收藏沉淀为稳定样本，便于后续做统计、导出和重点复盘。",
-    };
-  }
-  if (pathname.startsWith("/analytics")) {
-    return {
-      eyebrow: "Network Lens",
-      title: "网络图与趋势分析",
-      description: "从全站收录、个人收藏和 CNS 长周期变化三个维度观察研究热点。",
+      title: "收藏与人工备注",
+      description: "把个人收藏沉淀为稳定样本，便于后续导出、比对和少量人工备注。",
     };
   }
   if (pathname.startsWith("/exports")) {
@@ -1710,6 +1763,13 @@ function getPageMeta(pathname: string, user: AuthUser) {
       eyebrow: "Export Studio",
       title: "批量导出配置",
       description: "按字段映射组装定制化导出表，避免每次手动整理论文元数据。",
+    };
+  }
+  if (pathname.startsWith("/admin/imports")) {
+    return {
+      eyebrow: "Import Control",
+      title: "导入与重导入",
+      description: "查看 producer SQLite 的最新可用运行，并手动触发导入或重导入到本地工作台数据面。",
     };
   }
   if (pathname.startsWith("/admin")) {
@@ -1723,110 +1783,174 @@ function getPageMeta(pathname: string, user: AuthUser) {
   return {
     eyebrow: "Daily Intake",
     title: "今日文献池",
-    description: `${user.role === "admin" ? "管理并分发" : "浏览并收藏"} 最新导入的共享论文，支持筛选、导出和快速查看摘要。`,
+    description: `${user.role === "admin" ? "管理并分发" : "浏览并收藏"} 最新导入到本地工作台的论文，支持筛选、导出和快速查看摘要。`,
   };
 }
 
-function groupSeriesByJournal(series: TrendPoint[]) {
-  const grouped = new Map<string, TrendPoint[]>();
-  for (const point of series) {
-    const journal = point.journal || "Unknown";
-    const current = grouped.get(journal) || [];
-    current.push(point);
-    grouped.set(journal, current);
-  }
-  return Array.from(grouped.entries()).map(([journal, points]) => ({ journal, points }));
-}
-
-function parseExpandedDates(value: string | null) {
-  return value
-    ? value
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean)
-    : [];
-}
-
-function sameStringArray(left: string[], right: string[]) {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
-async function fetchAllPaperDirectory() {
-  const collected: PaperItem[] = [];
-  let page = 1;
-
-  while (page <= 50) {
-    const response = await request<Paginated<PaperItem>>(`/api/papers?page=${page}&page_size=200`);
-    if (!response.items.length) {
-      break;
-    }
-    collected.push(...response.items);
-    if (collected.length >= response.total) {
-      break;
-    }
-    page += 1;
-  }
-
-  return collected;
-}
-
-function collectUniqueValues(values: Array<string | null | undefined>) {
-  return Array.from(new Set(values.filter((value): value is string => Boolean(value && value.trim()))));
-}
-
 function getPaperSelectionKey(item: PaperItem) {
-  return `${item.digest_date}:${item.id}`;
+  return String(item.id);
 }
 
-function comparePaperPriority(left: PaperItem, right: PaperItem) {
-  const levelDiff = getInterestPriority(left.interest_level) - getInterestPriority(right.interest_level);
-  if (levelDiff !== 0) {
-    return levelDiff;
-  }
-  if (right.interest_score !== left.interest_score) {
-    return right.interest_score - left.interest_score;
-  }
-  return right.id - left.id;
+function hasDigestSearchParams(searchParams: URLSearchParams) {
+  return ["q", "publish_date", "date", "category", "tag", "sort"].some((key) => Boolean(searchParams.get(key)));
 }
 
-function getInterestPriority(level: string) {
-  if (level.includes("非常感兴趣")) return 0;
-  if (level.includes("感兴趣")) return 1;
-  if (level.includes("一般")) return 2;
-  return 9;
+function buildPaperFiltersFromSearchParams(searchParams: URLSearchParams): PaperFilters {
+  const sort = searchParams.get("sort");
+  return {
+    query: searchParams.get("q") || "",
+    publishDate: searchParams.get("publish_date") || searchParams.get("date") || "",
+    category: searchParams.get("category") || "",
+    tag: searchParams.get("tag") || "",
+    sort: sort === "publish_date_asc" ? "publish_date_asc" : "publish_date_desc",
+  };
 }
 
-function matchesPaperFilters(item: PaperItem, filters: PaperFilters) {
-  if (filters.date && item.digest_date !== filters.date) {
-    return false;
+function arePaperFiltersEqual(left: PaperFilters, right: PaperFilters) {
+  return (
+    left.query === right.query &&
+    left.publishDate === right.publishDate &&
+    left.category === right.category &&
+    left.tag === right.tag &&
+    left.sort === right.sort
+  );
+}
+
+function getPaperFiltersSignature(filters: PaperFilters) {
+  return JSON.stringify(filters);
+}
+
+function buildLoadedGroupMap(groups: PaperLibraryGroup[]) {
+  return groups.reduce<Record<string, PaperLibraryGroup>>((current, group) => {
+    current[group.publish_date] = group;
+    return current;
+  }, {});
+}
+
+function collectLoadedPapers(loadedGroups: Record<string, PaperLibraryGroup>, orderedGroups: Array<{ publish_date: string }>) {
+  return orderedGroups.flatMap((group) => loadedGroups[group.publish_date]?.items || []);
+}
+
+function collectVisibleLoadedPapers(
+  loadedGroups: Record<string, PaperLibraryGroup>,
+  expandedPublishDates: string[],
+  orderedGroups: Array<{ publish_date: string }>,
+) {
+  const expandedSet = new Set(expandedPublishDates);
+  return orderedGroups.flatMap((group) => (expandedSet.has(group.publish_date) ? loadedGroups[group.publish_date]?.items || [] : []));
+}
+
+function sanitizeExpandedPublishDates(
+  expandedPublishDates: string[],
+  orderedGroups: Array<{ publish_date: string }>,
+) {
+  const validDates = new Set(orderedGroups.map((group) => group.publish_date));
+  const sanitized = expandedPublishDates.filter((publishDate) => validDates.has(publishDate));
+  if (sanitized.length) {
+    return sanitized;
   }
-  if (filters.category && item.category !== filters.category) {
-    return false;
+  return orderedGroups[0] ? [orderedGroups[0].publish_date] : [];
+}
+
+function ensurePublishDateExpanded(
+  expandedPublishDates: string[],
+  publishDate: string,
+  orderedGroups: Array<{ publish_date: string }>,
+) {
+  if (expandedPublishDates.includes(publishDate)) {
+    return sanitizeExpandedPublishDates(expandedPublishDates, orderedGroups);
   }
-  if (filters.tag && !item.tags.includes(filters.tag)) {
-    return false;
+  return sanitizeExpandedPublishDates([...expandedPublishDates, publishDate], orderedGroups);
+}
+
+function pickActiveRailDate(current: string, requestedPublishDate: string, orderedGroups: Array<{ publish_date: string }>) {
+  if (requestedPublishDate && orderedGroups.some((group) => group.publish_date === requestedPublishDate)) {
+    return requestedPublishDate;
   }
-  const query = filters.query.trim().toLowerCase();
-  if (!query) {
-    return true;
+  if (current && orderedGroups.some((group) => group.publish_date === current)) {
+    return current;
   }
-  return [
-    item.title_en,
-    item.title_zh,
-    item.summary_zh,
-    item.abstract,
-    item.journal,
-    item.category,
-    item.interest_tag,
-    item.tags.join(" "),
-  ]
-    .join(" ")
-    .toLowerCase()
-    .includes(query);
+  return orderedGroups[0]?.publish_date || "";
+}
+
+function updateFavoriteStateInGroups(
+  loadedGroups: Record<string, PaperLibraryGroup>,
+  paperId: number,
+  isFavorited: boolean,
+) {
+  const nextGroups: Record<string, PaperLibraryGroup> = {};
+  for (const [publishDate, group] of Object.entries(loadedGroups)) {
+    nextGroups[publishDate] = {
+      ...group,
+      items: group.items.map((paper) => (paper.id === paperId ? { ...paper, is_favorited: isFavorited } : paper)),
+    };
+  }
+  return nextGroups;
+}
+
+function formatJournalMarker(journal: string) {
+  const normalized = normalizeJournalName(journal);
+  const override = DIGEST_JOURNAL_MARKER_OVERRIDES[normalized];
+  if (override) {
+    return override;
+  }
+  const compact = normalized.replace(/[^a-z0-9 ]/g, " ").trim();
+  if (!compact) {
+    return "JNL";
+  }
+  const words = compact.split(/\s+/).filter(Boolean);
+  if (words.length > 1) {
+    const acronym = words.map((word) => word[0]).join("").toUpperCase();
+    if (acronym.length >= 2 && acronym.length <= 4) {
+      return acronym;
+    }
+  }
+  return words[0].slice(0, 4).toUpperCase();
+}
+
+function compactPaperTags(tags: string[]) {
+  const visibleTags = tags.slice(0, 3);
+  if (!visibleTags.length) {
+    return [];
+  }
+  if (tags.length <= 3) {
+    return visibleTags;
+  }
+  return [...visibleTags, `+${tags.length - 3}`];
+}
+
+function normalizeJournalName(journal: string) {
+  return String(journal || "").trim().toLowerCase();
+}
+
+function isFlagshipJournal(journal: string) {
+  return DIGEST_FLAGSHIP_JOURNAL_ORDER.map((value) => value.toLowerCase()).includes(normalizeJournalName(journal));
+}
+
+function formatReviewDecision(value: string) {
+  if (value === "keep") return "保留";
+  if (value === "review") return "稍后处理";
+  if (value === "reject") return "不保留";
+  return value;
+}
+
+function formatImportSummary(results: ImportResult[], prefix: string) {
+  if (!results.length) {
+    return `${prefix}，没有发现需要更新的运行。`;
+  }
+  return `${prefix}：${results
+    .map((result) => `${result.digest_date} ${result.result_status}（条目 ${result.imported_items} / 成员 ${result.imported_memberships}）`)
+    .join("；")}`;
 }
 
 function formatDigestDate(value: string) {
+  if (!value || value === "unknown") {
+    return "未知日期";
+  }
   const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
   return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", weekday: "short" }).format(date);
 }
 
@@ -1840,6 +1964,7 @@ function exportSelectedPapers(items: PaperItem[], kind: "metadata" | "doi-list")
   const columns = [
     ["digest_date", "digest_date"],
     ["id", "id"],
+    ["canonical_key", "canonical_key"],
     ["doi", "doi"],
     ["journal", "journal"],
     ["publish_date", "publish_date"],
@@ -1875,6 +2000,7 @@ function exportSelectedFavorites(items: FavoriteItem[], kind: "metadata" | "doi-
   const headers = [
     "favorite_id",
     "paper_id",
+    "canonical_key",
     "digest_date",
     "favorited_at",
     "doi",
@@ -1883,12 +2009,12 @@ function exportSelectedFavorites(items: FavoriteItem[], kind: "metadata" | "doi-
     "category",
     "interest_level",
     "interest_tag",
-    "review_interest_level",
-    "review_interest_tag",
-    "review_final_decision",
-    "review_final_category",
-    "reviewer_notes",
-    "review_updated_at",
+    "manual_interest_level",
+    "manual_interest_tag",
+    "final_status",
+    "manual_group",
+    "manual_notes",
+    "manual_updated_at",
     "title_en",
     "title_zh",
     "article_url",
@@ -1896,6 +2022,7 @@ function exportSelectedFavorites(items: FavoriteItem[], kind: "metadata" | "doi-
   const rows = items.map((item) => [
     item.id,
     item.paper_id,
+    item.canonical_key,
     item.digest_date || "",
     item.favorited_at,
     item.doi,
@@ -1906,7 +2033,7 @@ function exportSelectedFavorites(items: FavoriteItem[], kind: "metadata" | "doi-
     item.interest_tag,
     item.review_interest_level,
     item.review_interest_tag,
-    item.review_final_decision,
+    formatReviewDecision(item.review_final_decision),
     item.review_final_category,
     item.reviewer_notes,
     item.review_updated_at || "",

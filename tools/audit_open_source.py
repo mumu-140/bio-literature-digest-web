@@ -25,7 +25,6 @@ IGNORED_PREFIXES = [
     Path("bio-literature-config/runtime"),
     Path("bio-literature-config/env"),
     Path("bio-literature-config/tunnel"),
-    Path("deploy/legacy"),
 ]
 
 BANNED_PATTERNS = {
@@ -51,7 +50,6 @@ REQUIRED_DIRECTORIES = [
     Path("tools"),
     Path("docs"),
     Path("deploy/cloudflare-tunnel"),
-    Path("deploy/legacy"),
     Path("bio-literature-config/env"),
     Path("bio-literature-config/data"),
     Path("bio-literature-config/runtime"),
@@ -66,10 +64,8 @@ REQUIRED_FILES = [
     Path("tools/resolve_instance_path.py"),
     Path("bio-literature-config/env/web/backend.env.local.example"),
     Path("bio-literature-config/env/web/deploy.env.local.example"),
-    Path("bio-literature-config/tunnel/web/config.yml.example"),
     Path("deploy/cloudflare-tunnel/config.yml.example"),
     Path("deploy/cloudflare-tunnel/com.example.bio-digest-web-tunnel.plist.example"),
-    Path("deploy/legacy/README.md"),
 ]
 
 
@@ -116,7 +112,7 @@ def scan_layout() -> list[str]:
     problems: list[str] = []
     for rel_path in LEGACY_FILES:
         if (PROJECT_ROOT / rel_path).exists():
-            problems.append(f"legacy deployment artifact should be moved under deploy/legacy: {rel_path}")
+            problems.append(f"unsupported legacy deployment artifact present: {rel_path}")
     for required in (PROJECT_ROOT / path for path in REQUIRED_DIRECTORIES):
         if not required.exists():
             problems.append(f"missing required directory: {required.relative_to(PROJECT_ROOT)}")
