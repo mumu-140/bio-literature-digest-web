@@ -3,11 +3,14 @@ from __future__ import annotations
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
+from .services.database_tuning import install_performance_indexes
+
 
 def run_runtime_migrations(engine: Engine) -> None:
     _migrate_user_visibility_fields(engine)
     _migrate_user_producer_uid(engine)
     _migrate_session_auth_method(engine)
+    install_performance_indexes(engine)
 
 
 def _user_columns(engine: Engine) -> set[str]:
