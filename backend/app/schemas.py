@@ -105,6 +105,9 @@ class PaperLibraryGroup(BaseModel):
     publish_date: str
     paper_count: int
     items: list[DigestPaper]
+    page: int = 1
+    page_size: int = 50
+    has_more: bool = False
 
 
 class PaperLibraryOverview(BaseModel):

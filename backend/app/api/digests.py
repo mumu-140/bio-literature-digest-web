@@ -160,6 +160,8 @@ def get_paper_library_group(
     category: Optional[str] = None,
     tag: Optional[str] = None,
     sort: str = Query(default="publish_date_desc"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PaperLibraryGroup:
@@ -174,4 +176,6 @@ def get_paper_library_group(
             sort=normalize_library_sort(sort),
         ),
         publish_date=publish_date,
+        page=page,
+        page_size=page_size,
     )

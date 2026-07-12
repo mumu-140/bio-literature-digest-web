@@ -269,5 +269,21 @@ class PaperLibraryApiTest(unittest.TestCase):
             self.assertEqual(payload["items"][0]["publish_date_day"], "2026-04-08")
 
 
+    def test_library_group_endpoint_paginates(self) -> None:
+        with TestClient(self.app_factory()) as client:
+            login = client.post("/api/auth/login", json={"email": "admin@example.com"})
+            self.assertEqual(login.status_code, 200)
+            self._seed_papers()
+
+            first = client.get("/api/papers/library/groups/2026-04-09?page=1&page_size=2")
+            second = client.get("/api/papers/library/groups/2026-04-09?page=2&page_size=2")
+            self.assertEqual(first.status_code, 200)
+            self.assertEqual(second.status_code, 200)
+            self.assertEqual(len(first.json()["items"]), 2)
+            self.assertTrue(first.json()["has_more"])
+            self.assertEqual(len(second.json()["items"]), 2)
+            self.assertFalse(second.json()["has_more"])
+
+
 if __name__ == "__main__":
     unittest.main()

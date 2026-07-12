@@ -46,6 +46,9 @@ export type PaperLibraryGroup = {
   publish_date: string;
   paper_count: number;
   items: PaperItem[];
+  page: number;
+  page_size: number;
+  has_more: boolean;
 };
 
 export type PaperLibraryOverview = {
@@ -288,6 +291,8 @@ export async function fetchPaperLibraryGroup(
     category?: string;
     tag?: string;
     sort?: DigestSortKey;
+    page?: number;
+    page_size?: number;
   },
 ) {
   const query = buildQueryString({
@@ -295,6 +300,8 @@ export async function fetchPaperLibraryGroup(
     category: params.category || "",
     tag: params.tag || "",
     sort: params.sort || "publish_date_desc",
+    page: params.page ? String(params.page) : "",
+    page_size: params.page_size ? String(params.page_size) : "",
   });
   return request<PaperLibraryGroup>(`/api/papers/library/groups/${encodeURIComponent(publishDate)}${query}`);
 }

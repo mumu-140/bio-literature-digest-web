@@ -112,7 +112,12 @@ def build_paper_library_overview(
                     user_id,
                     normalized_filters,
                     publish_date=publish_date,
+                    page=1,
+                    page_size=50,
                 ).items,
+                page=1,
+                page_size=50,
+                has_more=len(grouped[publish_date]) > 50,
             )
             for publish_date in loaded_dates
         ],
@@ -126,6 +131,8 @@ def load_paper_library_group(
     filters: PaperLibraryFilters,
     *,
     publish_date: str,
+    page: int = 1,
+    page_size: int = 50,
 ) -> PaperLibraryGroup:
     requested_publish_date = _normalize_requested_publish_date(publish_date)
     normalized_filters = PaperLibraryFilters(
@@ -137,10 +144,15 @@ def load_paper_library_group(
     )
     papers = load_paper_library_papers(db, user_id, normalized_filters)
     ordered_items = _sort_group_items(papers)
+    start = (page - 1) * page_size
+    end = start + page_size
     return PaperLibraryGroup(
         publish_date=requested_publish_date,
         paper_count=len(ordered_items),
-        items=ordered_items,
+        items=ordered_items[start:end],
+        page=page,
+        page_size=page_size,
+        has_more=end < len(ordered_items),
     )
 
 

@@ -659,6 +659,33 @@ function DigestPage({ user }: { user: AuthUser }) {
     }
   }
 
+  async function loadMoreGroup(publishDate: string) {
+    const currentGroup = loadedGroups[publishDate];
+    if (!currentGroup?.has_more || loadingGroupDates.includes(publishDate)) {
+      return;
+    }
+    setLoadingGroupDates((current) => [...current, publishDate]);
+    try {
+      const nextGroup = await fetchPaperLibraryGroup(publishDate, {
+        q: appliedFilters.query,
+        category: appliedFilters.category,
+        tag: appliedFilters.tag,
+        sort: appliedFilters.sort,
+        page: currentGroup.page + 1,
+        page_size: currentGroup.page_size,
+      });
+      setLoadedGroups((current) => ({
+        ...current,
+        [publishDate]: {
+          ...nextGroup,
+          items: [...(current[publishDate]?.items || []), ...nextGroup.items],
+        },
+      }));
+    } finally {
+      setLoadingGroupDates((current) => current.filter((value) => value !== publishDate));
+    }
+  }
+
   async function scrollToDate(publishDate: string) {
     setActiveRailDate(publishDate);
     setExpandedPublishDates((current) => ensurePublishDateExpanded(current, publishDate, groupSummaries));
@@ -818,15 +845,24 @@ function DigestPage({ user }: { user: AuthUser }) {
                     isLoadingGroup && !groupData ? (
                       <div className="small-copy">正在加载该发布日期的文献…</div>
                     ) : (
-                      <PaperTable
-                        papers={groupData?.items || []}
-                        selectedKeys={selectedKeySet}
-                        pendingFavoriteIds={pendingFavoriteIdSet}
-                        onToggleSelect={togglePaperSelection}
-                        onToggleSelectAll={togglePaperBatch}
-                        onFavorite={toggleFavorite}
-                        onPush={user.role === "admin" ? pushPaper : undefined}
-                      />
+                      <>
+                        <PaperTable
+                          papers={groupData?.items || []}
+                          selectedKeys={selectedKeySet}
+                          pendingFavoriteIds={pendingFavoriteIdSet}
+                          onToggleSelect={togglePaperSelection}
+                          onToggleSelectAll={togglePaperBatch}
+                          onFavorite={toggleFavorite}
+                          onPush={user.role === "admin" ? pushPaper : undefined}
+                        />
+                        {groupData?.has_more ? (
+                          <div className="actions">
+                            <button className="ghost-button" onClick={() => void loadMoreGroup(group.publish_date)} disabled={isLoadingGroup}>
+                              {isLoadingGroup ? "加载中…" : `加载更多（剩余 ${groupData.paper_count - groupData.items.length}）`}
+                            </button>
+                          </div>
+                        ) : null}
+                      </>
                     )
                   ) : null}
                 </section>
