@@ -79,6 +79,7 @@ class DigestPaper(BaseModel):
     interest_level: str
     interest_score: int
     interest_tag: str
+    authors: list[str]
     title_en: str
     title_zh: str
     summary_zh: str
@@ -137,6 +138,7 @@ class FavoriteRead(BaseModel):
     category: str
     interest_level: str
     interest_tag: str
+    authors: list[str]
     title_en: str
     title_zh: str
     article_url: str

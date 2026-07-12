@@ -61,6 +61,7 @@ def build_digest_paper(row, favorite_keys: set[str]) -> DigestPaper:
         interest_level=paper.interest_level,
         interest_score=paper.interest_score,
         interest_tag=paper.interest_tag,
+        authors=paper.authors_json or [],
         title_en=paper.title_en,
         title_zh=paper.title_zh,
         summary_zh=paper.summary_zh,

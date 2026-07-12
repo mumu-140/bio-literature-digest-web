@@ -63,6 +63,7 @@ def _serialize_favorite(
         category=item.category,
         interest_level=item.interest_level,
         interest_tag=item.interest_tag,
+        authors=item.authors_json or [],
         title_en=item.title_en,
         title_zh=item.title_zh,
         article_url=item.article_url,

@@ -1,3 +1,5 @@
+import { importIntoZotero } from "./referenceImport";
+
 import { FormEvent, ReactNode, useDeferredValue, useEffect, useRef, useState } from "react";
 import {
   NavLink,
@@ -617,6 +619,12 @@ function DigestPage({ user }: { user: AuthUser }) {
     });
   }
 
+  function importSelectedIntoZotero() {
+    const selected = loadedPapers.filter((item) => selectedKeys.includes(getPaperSelectionKey(item)));
+    importIntoZotero(selected);
+    setExportMessage(`已生成 ${selected.length} 篇文献的 Zotero 导入文件。`);
+  }
+
   function runSelectedExport(kind: "metadata" | "doi-list") {
     const selected = loadedPapers.filter((item) => selectedKeys.includes(getPaperSelectionKey(item)));
     if (!selected.length) {
@@ -797,6 +805,7 @@ function DigestPage({ user }: { user: AuthUser }) {
           <div className="actions">
             <span className="selection-copy">已选 {selectedKeys.length} 篇</span>
             <button className="ghost-button" onClick={clearSelection} disabled={!selectedKeys.length}>清空选择</button>
+            <button className="primary-button" onClick={importSelectedIntoZotero} disabled={!selectedKeys.length}>导入 Zotero</button>
             <button className="ghost-button" onClick={() => runSelectedExport("metadata")} disabled={!selectedKeys.length}>导出选中元数据</button>
             <button className="ghost-button" onClick={() => runSelectedExport("doi-list")} disabled={!selectedKeys.length}>导出选中 DOI</button>
           </div>
@@ -1213,6 +1222,11 @@ function FavoritesPage({ user }: { user: AuthUser }) {
     });
   }
 
+  function importSelectedFavoritesIntoZotero() {
+    const selected = favorites.filter((favorite) => selectedIds.includes(favorite.id));
+    importIntoZotero(selected);
+  }
+
   function exportFavorites(kind: "metadata" | "doi-list") {
     const selected = favorites.filter((favorite) => selectedIds.includes(favorite.id));
     if (!selected.length) {
@@ -1304,6 +1318,7 @@ function FavoritesPage({ user }: { user: AuthUser }) {
         <div className="actions">
           <span className="selection-copy">已选 {selectedIds.length} 篇</span>
           <button className="ghost-button" onClick={clearSelection} disabled={!selectedIds.length}>清空选择</button>
+          <button className="primary-button" onClick={importSelectedFavoritesIntoZotero} disabled={!selectedIds.length}>导入 Zotero</button>
           <button className="ghost-button" onClick={() => exportFavorites("metadata")} disabled={!selectedIds.length}>导出选中元数据</button>
           <button className="ghost-button" onClick={() => exportFavorites("doi-list")} disabled={!selectedIds.length}>导出选中 DOI</button>
         </div>

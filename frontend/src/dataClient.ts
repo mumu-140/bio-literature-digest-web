@@ -18,6 +18,7 @@ export type PaperItem = {
   interest_level: string;
   interest_score: number;
   interest_tag: string;
+  authors: string[];
   title_en: string;
   title_zh: string;
   summary_zh: string;
@@ -73,6 +74,7 @@ export type FavoriteItem = {
   category: string;
   interest_level: string;
   interest_tag: string;
+  authors: string[];
   title_en: string;
   title_zh: string;
   article_url: string;
