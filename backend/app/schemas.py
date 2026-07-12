@@ -170,6 +170,7 @@ class PaperPushCreate(BaseModel):
     paper_id: int
     recipient_user_id: int
     note: str = ""
+    send_email_notification: bool = True
 
 
 class PaperPushRead(BaseModel):

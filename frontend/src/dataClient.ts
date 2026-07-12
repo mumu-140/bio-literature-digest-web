@@ -345,7 +345,7 @@ export async function updatePush(pushId: number, isRead: boolean) {
   });
 }
 
-export async function createPush(payload: { paper_id: number; recipient_user_id: number; note: string }) {
+export async function createPush(payload: { paper_id: number; recipient_user_id: number; note: string; send_email_notification: boolean }) {
   return request<PaperPushItem>("/api/admin/pushes", {
     method: "POST",
     body: JSON.stringify(payload),

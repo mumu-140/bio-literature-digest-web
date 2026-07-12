@@ -102,6 +102,7 @@ class PushFlowTest(unittest.TestCase):
                     "paper_id": paper_id,
                     "recipient_user_id": recipient_id,
                     "note": "please review locally",
+                    "send_email_notification": False,
                 },
             )
             self.assertEqual(response.status_code, 201)

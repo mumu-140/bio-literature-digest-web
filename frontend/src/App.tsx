@@ -323,7 +323,9 @@ function DigestPage({ user }: { user: AuthUser }) {
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [pushTargetUserId, setPushTargetUserId] = useState("");
   const [pushNote, setPushNote] = useState("");
+  const [sendPushEmail, setSendPushEmail] = useState(true);
   const [pushMessage, setPushMessage] = useState("");
+  const [pushingPaperId, setPushingPaperId] = useState<number | null>(null);
   const [loadingOverview, setLoadingOverview] = useState(storedDigestCache?.overview ? false : true);
   const [refreshingOverview, setRefreshingOverview] = useState(false);
   const [loadingGroupDates, setLoadingGroupDates] = useState<string[]>([]);
@@ -633,12 +635,16 @@ function DigestPage({ user }: { user: AuthUser }) {
       setPushMessage("先填写接收账户 ID。");
       return;
     }
-    await createPush({
-      paper_id: item.id,
-      recipient_user_id: Number(pushTargetUserId),
-      note: pushNote,
-    });
-    setPushMessage(`已将《${item.title_en}》推送给账户 ${pushTargetUserId}。`);
+    setPushingPaperId(item.id);
+    setPushMessage("");
+    try {
+      await createPush({ paper_id: item.id, recipient_user_id: Number(pushTargetUserId), note: pushNote, send_email_notification: sendPushEmail });
+      setPushMessage("已将《" + item.title_en + "》推送给账户 " + pushTargetUserId + (sendPushEmail ? "，邮件提醒已进入发送队列。" : "。"));
+    } catch (error) {
+      setPushMessage(error instanceof Error ? error.message : "推送失败，请稍后重试。");
+    } finally {
+      setPushingPaperId(null);
+    }
   }
 
   async function ensureGroupLoaded(publishDate: string) {
@@ -748,6 +754,7 @@ function DigestPage({ user }: { user: AuthUser }) {
               placeholder="选择接收账户"
             />
             <input aria-label="推送备注" name="push_note" placeholder="推送备注" value={pushNote} onChange={(event) => setPushNote(event.target.value)} />
+            <label className="checkbox-label"><input type="checkbox" checked={sendPushEmail} onChange={(event) => setSendPushEmail(event.target.checked)} />邮件提醒</label>
             {pushMessage ? <span className="success-text">{pushMessage}</span> : null}
           </div>
         ) : null}
@@ -854,6 +861,7 @@ function DigestPage({ user }: { user: AuthUser }) {
                           onToggleSelectAll={togglePaperBatch}
                           onFavorite={toggleFavorite}
                           onPush={user.role === "admin" ? pushPaper : undefined}
+                          pushingPaperId={pushingPaperId}
                         />
                         {groupData?.has_more ? (
                           <div className="actions">
@@ -883,6 +891,7 @@ function PaperTable({
   onToggleSelectAll,
   onFavorite,
   onPush,
+  pushingPaperId,
 }: {
   papers: PaperItem[];
   selectedKeys: Set<string>;
@@ -891,6 +900,7 @@ function PaperTable({
   onToggleSelectAll: (items: PaperItem[]) => void;
   onFavorite: (item: PaperItem) => void;
   onPush?: (item: PaperItem) => void;
+  pushingPaperId?: number | null;
 }) {
   const allSelected = papers.length > 0 && papers.every((paper) => selectedKeys.has(getPaperSelectionKey(paper)));
 
@@ -938,7 +948,7 @@ function PaperTable({
                   <button className="table-link" onClick={() => onFavorite(paper)} disabled={pendingFavoriteIds.has(paper.id)}>
                     {pendingFavoriteIds.has(paper.id) ? "处理中…" : paper.is_favorited ? "取消收藏" : "加入收藏"}
                   </button>
-                  {onPush ? <button className="table-link" onClick={() => onPush(paper)}>推送</button> : null}
+                  {onPush ? <button className="table-link" onClick={() => onPush(paper)} disabled={pushingPaperId !== null}>{pushingPaperId === paper.id ? "推送中…" : "推送"}</button> : null}
                   <a className="table-link link-button" href={paper.article_url} target="_blank" rel="noreferrer">Open</a>
                 </div>
               </div>
@@ -973,7 +983,7 @@ function PaperTable({
                     <button className="table-link" onClick={() => onFavorite(paper)} disabled={pendingFavoriteIds.has(paper.id)}>
                       {pendingFavoriteIds.has(paper.id) ? "处理中…" : paper.is_favorited ? "取消" : "收藏"}
                     </button>
-                    {onPush ? <button className="table-link" onClick={() => onPush(paper)}>推送</button> : null}
+                    {onPush ? <button className="table-link" onClick={() => onPush(paper)} disabled={pushingPaperId !== null}>{pushingPaperId === paper.id ? "推送中…" : "推送"}</button> : null}
                   </div>
                 </td>
                 <td className="journal-col">{paper.journal}<br /><span className="muted">{formatDigestDate(paper.publish_date_day)}</span></td>

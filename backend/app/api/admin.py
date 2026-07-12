@@ -20,6 +20,7 @@ from ..schemas import (
     UserUpdate,
 )
 from ..services.audit import record_action
+from ..services.push_email import PushEmailError, send_push_email
 from ..services.subscription_users import SubscriptionEmailExistsError, add_subscription_email
 from ..services.user_visibility import require_visible_target_user, visible_user_statement
 from ..services.user_sync import derive_display_name
@@ -183,6 +184,11 @@ def push_paper_to_user(
         sent_by_user_id=admin_user.id,
         note=payload.note.strip(),
     )
+    if payload.send_email_notification:
+        try:
+            send_push_email(recipient=recipient, sender=admin_user, paper=paper, note=payload.note.strip())
+        except PushEmailError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"邮件提醒发送失败：{exc}") from exc
     db.add(push)
     db.flush()
     record_action(
