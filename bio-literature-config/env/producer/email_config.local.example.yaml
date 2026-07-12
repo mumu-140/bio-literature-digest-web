@@ -1,0 +1,11 @@
+smtp_profiles:
+  qq_mail:
+    from_name: Bio Digest
+    from_email: your-email@example.com
+    username: your-email@example.com
+    smtp_host: smtp.qq.com
+    smtp_port: 465
+    security: ssl
+    password_env: QQ_MAIL_APP_PASSWORD
+    to_emails:
+      - receiver@example.com

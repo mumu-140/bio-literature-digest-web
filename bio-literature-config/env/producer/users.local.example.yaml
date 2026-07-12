@@ -1,0 +1,9 @@
+users:
+  - uid: UDI-0001
+    email: member@example.com
+    name: Example Member
+    role: member
+    group: internal
+    is_active: true
+    receives_digest: true
+    smtp_profile: primary_smtp

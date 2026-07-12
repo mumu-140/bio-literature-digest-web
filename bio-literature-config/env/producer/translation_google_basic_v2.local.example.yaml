@@ -1,0 +1,3 @@
+provider: google-basic-v2
+api_key_env: GOOGLE_TRANSLATE_API_KEY
+glossary_path: ../../bio-literature-digest/references/bio_translation_glossary.yaml
