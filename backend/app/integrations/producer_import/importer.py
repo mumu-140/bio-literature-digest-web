@@ -17,6 +17,7 @@ from ...models import (
 from .artifact_validation import ArtifactValidationResult
 from .mapper import map_item_payload, map_membership_payload
 from .run_selection import SelectedProducerRun
+from ...services.library_stats import refresh_library_stats
 
 
 @dataclass(frozen=True)
@@ -274,6 +275,8 @@ def import_selected_run(
         entity_id=current_run.id,
         detail=summary,
     )
+    db.flush()
+    refresh_library_stats(db)
     db.commit()
     return ImportExecutionResult(
         digest_date=selected_run.run.digest_date,

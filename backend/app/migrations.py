@@ -4,6 +4,8 @@ from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 from .services.database_tuning import install_performance_indexes
+from .services.library_stats import ensure_library_stats
+from .services.search_index import ensure_search_index
 
 
 def run_runtime_migrations(engine: Engine) -> None:
@@ -11,6 +13,8 @@ def run_runtime_migrations(engine: Engine) -> None:
     _migrate_user_producer_uid(engine)
     _migrate_session_auth_method(engine)
     install_performance_indexes(engine)
+    ensure_search_index(engine)
+    ensure_library_stats(engine)
 
 
 def _user_columns(engine: Engine) -> set[str]:

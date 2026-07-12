@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from ..models import ImportedDigestMembership, ImportedLiteratureItem, UserLiteratureFavorite
 from ..schemas import DigestPaper, PaperLibraryGroup, PaperLibraryGroupSummary, PaperLibraryOverview
+from .library_stats import load_library_stats
+from .search_index import apply_full_text_filter, search_index_available
 
 DEFAULT_LIBRARY_SORT = "publish_date_desc"
 SUPPORTED_LIBRARY_SORTS = {"publish_date_desc", "publish_date_asc"}
@@ -85,9 +87,15 @@ def build_paper_library_overview(
         sort=normalize_library_sort(filters.sort),
     )
     filter_options = collect_paper_library_filter_options(db)
-    paper_dates = load_paper_library_index(db, normalized_filters)
-    grouped = _group_paper_ids_by_publish_date(paper_dates)
-    ordered_dates = order_publish_dates(grouped.keys(), normalized_filters.sort)
+    stats_rows = load_library_stats(db) if _can_use_materialized_stats(normalized_filters) else []
+    if stats_rows:
+        group_counts = dict(stats_rows)
+        total_papers = sum(group_counts.values())
+    else:
+        paper_dates = load_paper_library_index(db, normalized_filters)
+        group_counts = {date: len(ids) for date, ids in _group_paper_ids_by_publish_date(paper_dates).items()}
+        total_papers = len(paper_dates)
+    ordered_dates = order_publish_dates(group_counts.keys(), normalized_filters.sort)
     if normalized_filters.publish_date:
         loaded_dates = ordered_dates[:1]
     else:
@@ -95,18 +103,18 @@ def build_paper_library_overview(
         loaded_dates = ordered_dates[:safe_group_count]
 
     return PaperLibraryOverview(
-        total_papers=len(paper_dates),
+        total_papers=total_papers,
         available_publish_dates=filter_options["available_publish_dates"],
         available_categories=filter_options["available_categories"],
         available_tags=filter_options["available_tags"],
         groups=[
-            PaperLibraryGroupSummary(publish_date=publish_date, paper_count=len(grouped[publish_date]))
+            PaperLibraryGroupSummary(publish_date=publish_date, paper_count=group_counts[publish_date])
             for publish_date in ordered_dates
         ],
         loaded_groups=[
             PaperLibraryGroup(
                 publish_date=publish_date,
-                paper_count=len(grouped[publish_date]),
+                paper_count=group_counts[publish_date],
                 items=load_paper_library_group(
                     db,
                     user_id,
@@ -117,7 +125,7 @@ def build_paper_library_overview(
                 ).items,
                 page=1,
                 page_size=50,
-                has_more=len(grouped[publish_date]) > 50,
+                has_more=group_counts[publish_date] > 50,
             )
             for publish_date in loaded_dates
         ],
@@ -204,17 +212,7 @@ def load_paper_library_papers(db: Session, user_id: int, filters: PaperLibraryFi
     if filters.category:
         statement = statement.where(ImportedLiteratureItem.category == filters.category)
     if filters.query:
-        like_value = f"%{filters.query}%"
-        statement = statement.where(
-            or_(
-                ImportedLiteratureItem.title_en.ilike(like_value),
-                ImportedLiteratureItem.title_zh.ilike(like_value),
-                ImportedLiteratureItem.summary_zh.ilike(like_value),
-                ImportedLiteratureItem.abstract.ilike(like_value),
-                ImportedLiteratureItem.journal.ilike(like_value),
-                ImportedLiteratureItem.interest_tag.ilike(like_value),
-            )
-        )
+        statement = _apply_text_filter(db, statement, filters.query)
     if filters.publish_date and filters.publish_date != UNKNOWN_PUBLISH_DATE:
         statement = statement.where(ImportedLiteratureItem.publish_date.like(f"{filters.publish_date}%"))
 
@@ -247,17 +245,7 @@ def load_paper_library_index(db: Session, filters: PaperLibraryFilters) -> list[
     if filters.category:
         statement = statement.where(ImportedLiteratureItem.category == filters.category)
     if filters.query:
-        like_value = f"%{filters.query}%"
-        statement = statement.where(
-            or_(
-                ImportedLiteratureItem.title_en.ilike(like_value),
-                ImportedLiteratureItem.title_zh.ilike(like_value),
-                ImportedLiteratureItem.summary_zh.ilike(like_value),
-                ImportedLiteratureItem.abstract.ilike(like_value),
-                ImportedLiteratureItem.journal.ilike(like_value),
-                ImportedLiteratureItem.interest_tag.ilike(like_value),
-            )
-        )
+        statement = _apply_text_filter(db, statement, filters.query)
     if filters.publish_date and filters.publish_date != UNKNOWN_PUBLISH_DATE:
         statement = statement.where(ImportedLiteratureItem.publish_date.like(f"{filters.publish_date}%"))
 
@@ -276,6 +264,24 @@ def load_paper_library_index(db: Session, filters: PaperLibraryFilters) -> list[
         indexed.append((row.id, publish_date))
     return indexed
 
+
+
+def _can_use_materialized_stats(filters: PaperLibraryFilters) -> bool:
+    return not any((filters.query, filters.category, filters.tag, filters.publish_date))
+
+
+def _apply_text_filter(db: Session, statement, query: str):
+    if search_index_available(db):
+        return apply_full_text_filter(statement, query)
+    like_value = f"%{query}%"
+    return statement.where(or_(
+        ImportedLiteratureItem.title_en.ilike(like_value),
+        ImportedLiteratureItem.title_zh.ilike(like_value),
+        ImportedLiteratureItem.summary_zh.ilike(like_value),
+        ImportedLiteratureItem.abstract.ilike(like_value),
+        ImportedLiteratureItem.journal.ilike(like_value),
+        ImportedLiteratureItem.interest_tag.ilike(like_value),
+    ))
 
 def order_publish_dates(values, sort: str) -> list[str]:
     valid_dates: dict[str, date_type] = {}

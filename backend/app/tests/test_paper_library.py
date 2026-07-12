@@ -285,5 +285,17 @@ class PaperLibraryApiTest(unittest.TestCase):
             self.assertFalse(second.json()["has_more"])
 
 
+    def test_library_search_uses_indexed_text(self) -> None:
+        with TestClient(self.app_factory()) as client:
+            login = client.post("/api/auth/login", json={"email": "admin@example.com"})
+            self.assertEqual(login.status_code, 200)
+            self._seed_papers()
+
+            response = client.get("/api/papers/library?q=Paper%20A&initial_group_count=1")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["total_papers"], 1)
+            self.assertEqual(response.json()["loaded_groups"][0]["items"][0]["title_en"], "Paper A")
+
+
 if __name__ == "__main__":
     unittest.main()
