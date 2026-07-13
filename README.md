@@ -128,3 +128,7 @@ This runs:
 ## Linux DO Declaration
 
 Linux DO Declaration: this open-source baseline targets Linux operations (DO = Deployment Operator). All hostnames, paths, and account values in README/examples are placeholders and must be replaced before deployment.
+
+## Versioned REST API
+
+See docs/API_V1.md for REST API v1 authentication, literature retrieval, report lifecycle, rule suggestions, audit, and idempotency.
