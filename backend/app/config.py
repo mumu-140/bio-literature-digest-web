@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     producer_root: str = ""
     producer_rules_path: str = ""
     producer_review_template_path: str = ""
+    literature_api_bootstrap_token: str = ""
+    literature_api_client_name: str = "deerflow"
+    literature_api_scopes: str = "literature:read,reports:write,rules:read,rules:suggest,audit:read"
 
 
 def _resolve_path(raw_value: str, *, base_dir: Path) -> str:
