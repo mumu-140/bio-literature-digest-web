@@ -288,6 +288,10 @@ class LiteraturePushV2(Base):
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     pushed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     read_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    email_notification_status: Mapped[str] = mapped_column(String(32), default="not_requested", index=True)
+    email_notification_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    email_notification_error: Mapped[str] = mapped_column(Text, default="")
+    email_notification_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     literature_item: Mapped[Optional[ImportedLiteratureItem]] = relationship(back_populates="pushes_v2")
     recipient: Mapped[User] = relationship(back_populates="received_imported_pushes", foreign_keys=[recipient_user_id])

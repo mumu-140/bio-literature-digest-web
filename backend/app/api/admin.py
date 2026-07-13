@@ -20,7 +20,6 @@ from ..schemas import (
     UserUpdate,
 )
 from ..services.audit import record_action
-from ..services.push_email import PushEmailError, send_push_email
 from ..services.subscription_users import SubscriptionEmailExistsError, add_subscription_email
 from ..services.user_visibility import require_visible_target_user, visible_user_statement
 from ..services.user_sync import derive_display_name
@@ -183,12 +182,8 @@ def push_paper_to_user(
         recipient_user_id=recipient.id,
         sent_by_user_id=admin_user.id,
         note=payload.note.strip(),
+        email_notification_status="pending" if payload.send_email_notification else "not_requested",
     )
-    if payload.send_email_notification:
-        try:
-            send_push_email(recipient=recipient, sender=admin_user, paper=paper, note=payload.note.strip())
-        except PushEmailError as exc:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"邮件提醒发送失败：{exc}") from exc
     db.add(push)
     db.flush()
     record_action(
@@ -212,6 +207,9 @@ def push_paper_to_user(
         is_read=push.is_read,
         pushed_at=push.pushed_at,
         read_at=push.read_at,
+        email_notification_status=push.email_notification_status,
+        email_notification_error=push.email_notification_error,
+        email_notification_sent_at=push.email_notification_sent_at,
         title_en=paper.title_en,
         title_zh=paper.title_zh,
         journal=paper.journal,

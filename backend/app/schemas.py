@@ -185,6 +185,9 @@ class PaperPushRead(BaseModel):
     is_read: bool
     pushed_at: datetime
     read_at: Optional[datetime] = None
+    email_notification_status: str = "not_requested"
+    email_notification_error: str = ""
+    email_notification_sent_at: Optional[datetime] = None
     title_en: str
     title_zh: str
     journal: str

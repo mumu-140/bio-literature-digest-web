@@ -1100,6 +1100,7 @@ function PushInboxPage({ user }: { user: AuthUser }) {
                 <p className="mobile-summary title-strong title-strong-zh">{push.title_zh}</p>
                 <p className="small-copy">{push.journal} · {push.publish_date}</p>
                 <p className="small-copy">{push.note || "无备注"}</p>
+                <p className="small-copy">邮件：{formatPushEmailStatus(push.email_notification_status)}</p>
                 <div className="mobile-card-actions">
                   {!push.is_read ? <button className="table-link" onClick={() => void markRead(push, true)}>标记已读</button> : null}
                   {push.is_read ? <button className="table-link" onClick={() => void markRead(push, false)}>恢复未读</button> : null}
@@ -1131,6 +1132,7 @@ function PushInboxPage({ user }: { user: AuthUser }) {
                     <div className="table-title table-title-en">{push.title_en}</div>
                     <div className="table-title table-title-zh">{push.title_zh}</div>
                     <div className="small-copy table-subcopy">{push.journal} · {push.publish_date}</div>
+                    <div className="small-copy table-subcopy">邮件：{formatPushEmailStatus(push.email_notification_status)}</div>
                   </td>
                   <td>{push.note || "无备注"}</td>
                   <td>
@@ -2185,6 +2187,16 @@ function formatDigestDate(value: string) {
     return value;
   }
   return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", weekday: "short" }).format(date);
+}
+
+function formatPushEmailStatus(status: PaperPushItem["email_notification_status"]) {
+  return {
+    not_requested: "未请求",
+    pending: "等待发送",
+    retrying: "正在重试",
+    sent: "已发送",
+    failed: "发送失败",
+  }[status] || status;
 }
 
 function normalizeDoi(doi: string) {

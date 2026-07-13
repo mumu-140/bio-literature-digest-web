@@ -135,6 +135,9 @@ export type PaperPushItem = {
   is_read: boolean;
   pushed_at: string;
   read_at?: string | null;
+  email_notification_status: "not_requested" | "pending" | "retrying" | "sent" | "failed";
+  email_notification_error: string;
+  email_notification_sent_at?: string | null;
   title_en: string;
   title_zh: string;
   journal: string;

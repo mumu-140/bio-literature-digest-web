@@ -21,6 +21,7 @@ class PushFlowTest(unittest.TestCase):
         os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
         os.environ["INITIAL_ADMIN_EMAIL"] = "admin@example.com"
         os.environ["PRODUCER_SYNC_ENABLED"] = "false"
+        os.environ["PUSH_EMAIL_WORKER_ENABLED"] = "false"
         database.engine = None
         database.SessionLocal = None
         reset_settings_cache()
@@ -33,6 +34,7 @@ class PushFlowTest(unittest.TestCase):
         os.environ.pop("DATABASE_URL", None)
         os.environ.pop("INITIAL_ADMIN_EMAIL", None)
         os.environ.pop("PRODUCER_SYNC_ENABLED", None)
+        os.environ.pop("PUSH_EMAIL_WORKER_ENABLED", None)
         database.engine = None
         database.SessionLocal = None
         reset_settings_cache()
@@ -112,6 +114,7 @@ class PushFlowTest(unittest.TestCase):
             self.assertEqual(payload["recipient_user_id"], recipient_id)
             self.assertEqual(payload["title_en"], "Pushable title")
             self.assertFalse(payload["is_read"])
+            self.assertEqual(payload["email_notification_status"], "not_requested")
 
         with TestClient(self.app_factory()) as member_client:
             member_login = member_client.post("/api/auth/login", json={"email": "member@example.com"})
@@ -128,3 +131,21 @@ class PushFlowTest(unittest.TestCase):
             mark_read = member_client.patch(f"/api/pushes/{push_id}", json={"is_read": True})
             self.assertEqual(mark_read.status_code, 200)
             self.assertTrue(mark_read.json()["is_read"])
+
+
+    def test_email_notification_is_queued_without_blocking_request(self) -> None:
+        with TestClient(self.app_factory()) as client:
+            login = client.post("/api/auth/login", json={"email": "admin@example.com"})
+            self.assertEqual(login.status_code, 200)
+            paper_id = self._seed_imported_paper()
+            response = client.post(
+                "/api/admin/pushes",
+                json={
+                    "paper_id": paper_id,
+                    "recipient_user_id": login.json()["user"]["id"],
+                    "note": "queued email",
+                    "send_email_notification": True,
+                },
+            )
+            self.assertEqual(response.status_code, 201)
+            self.assertEqual(response.json()["email_notification_status"], "pending")

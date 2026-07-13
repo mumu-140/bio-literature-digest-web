@@ -12,6 +12,7 @@ from .api.v1 import router as api_v1_router
 from .config import Settings, get_settings
 from .models import User
 from .services.api_auth import bootstrap_api_client
+from .services.push_email_queue import process_push_email_jobs
 from .integrations.producer_import.runtime_sync import (
     ensure_runtime_database_ready,
     inside_sync_window as _inside_sync_window,
@@ -41,6 +42,19 @@ def bootstrap_admin() -> None:
         db.add(admin_user)
         db.commit()
 
+
+async def periodic_push_email_delivery() -> None:
+    while True:
+        await asyncio.sleep(get_settings().push_email_worker_interval_seconds)
+        if database.SessionLocal is None:
+            continue
+        try:
+            with database.SessionLocal() as db:
+                await asyncio.to_thread(process_push_email_jobs, db)
+        except Exception as exc:
+            print(f"[push-email] delivery failed: {exc}")
+
+
 async def periodic_producer_sync(settings: Settings) -> None:
     while True:
         await asyncio.sleep(settings.producer_sync_interval_seconds)
@@ -64,11 +78,16 @@ async def lifespan(_: FastAPI):
             bootstrap_api_client(db)
 
     sync_task: asyncio.Task[None] | None = None
+    email_task = asyncio.create_task(periodic_push_email_delivery()) if settings.push_email_worker_enabled else None
     if settings.producer_sync_enabled and settings.producer_sync_interval_seconds > 0:
         sync_task = asyncio.create_task(periodic_producer_sync(settings))
     try:
         yield
     finally:
+        if email_task is not None:
+            email_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await email_task
         if sync_task is not None:
             sync_task.cancel()
             with suppress(asyncio.CancelledError):

@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     literature_api_bootstrap_token: str = ""
     literature_api_client_name: str = "deerflow"
     literature_api_scopes: str = "literature:read,reports:write,rules:read,rules:suggest,audit:read"
+    push_email_worker_enabled: bool = True
+    push_email_worker_interval_seconds: int = Field(default=10, ge=1)
 
 
 def _resolve_path(raw_value: str, *, base_dir: Path) -> str:
