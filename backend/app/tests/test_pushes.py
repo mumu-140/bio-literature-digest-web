@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from app import database
 from app.config import reset_settings_cache
-from app.models import ImportedDigestMembership, ImportedDigestRun, ImportedLiteratureItem, User
+from app.models import ImportedDigestMembership, ImportedDigestRun, ImportedLiteratureItem, LiteraturePushV2, User
 
 
 class PushFlowTest(unittest.TestCase):
@@ -40,7 +40,7 @@ class PushFlowTest(unittest.TestCase):
         database.SessionLocal = None
         reset_settings_cache()
 
-    def _seed_imported_paper(self) -> int:
+    def _seed_imported_papers(self, count: int = 1) -> list[int]:
         with database.SessionLocal() as db:
             digest_run = ImportedDigestRun(
                 digest_date=date.fromisoformat("2026-04-06"),
@@ -49,36 +49,43 @@ class PushFlowTest(unittest.TestCase):
             )
             db.add(digest_run)
             db.flush()
-            paper = ImportedLiteratureItem(
-                literature_item_key="doi:10.1000/push-flow",
-                doi="10.1000/push-flow",
-                canonical_url="https://example.org/push-flow",
-                journal="Nature",
-                category="omics",
-                publish_date="2026-04-06T00:01:00Z",
-                interest_level="感兴趣",
-                interest_score=4,
-                interest_tag="单细胞",
-                title_en="Pushable title",
-                title_zh="可推送标题",
-                article_url="https://example.org/push-flow",
-            )
-            db.add(paper)
-            db.flush()
-            db.add(
-                ImportedDigestMembership(
-                    digest_run_id=digest_run.id,
-                    literature_item_id=paper.id,
-                    literature_item_key=paper.literature_item_key,
-                    digest_date=date.fromisoformat("2026-04-06"),
-                    list_type="digest",
-                    publication_stage="journal",
-                    row_index=1,
-                    source_record_json={},
+            paper_ids: list[int] = []
+            for index in range(count):
+                suffix = "" if index == 0 else f"-{index + 1}"
+                paper = ImportedLiteratureItem(
+                    literature_item_key="doi:10.1000/push-flow" + suffix,
+                    doi="10.1000/push-flow" + suffix,
+                    canonical_url="https://example.org/push-flow" + suffix,
+                    journal="Nature",
+                    category="omics",
+                    publish_date="2026-04-06T00:01:00Z",
+                    interest_level="感兴趣",
+                    interest_score=4,
+                    interest_tag="单细胞",
+                    title_en="Pushable title" + suffix,
+                    title_zh="可推送标题" + suffix,
+                    article_url="https://example.org/push-flow" + suffix,
                 )
-            )
+                db.add(paper)
+                db.flush()
+                db.add(
+                    ImportedDigestMembership(
+                        digest_run_id=digest_run.id,
+                        literature_item_id=paper.id,
+                        literature_item_key=paper.literature_item_key,
+                        digest_date=date.fromisoformat("2026-04-06"),
+                        list_type="digest",
+                        publication_stage="journal",
+                        row_index=index + 1,
+                        source_record_json={},
+                    )
+                )
+                paper_ids.append(paper.id)
             db.commit()
-            return paper.id
+            return paper_ids
+
+    def _seed_imported_paper(self) -> int:
+        return self._seed_imported_papers()[0]
 
     def test_admin_push_uses_local_imported_item_and_recipient_can_mark_read(self) -> None:
         with TestClient(self.app_factory()) as admin_client:
@@ -133,6 +140,24 @@ class PushFlowTest(unittest.TestCase):
             self.assertEqual(mark_read.status_code, 200)
             self.assertTrue(mark_read.json()["is_read"])
 
+
+    def test_email_sender_wraps_malformed_service_response(self) -> None:
+        from app.services.push_email import PushEmailError, send_push_email
+
+        recipient = User(email="member@example.com", name="Member", role="member", is_active=True)
+        sender = User(email="admin@example.com", name="Admin", role="admin", is_active=True)
+        paper = ImportedLiteratureItem(
+            literature_item_key="doi:10.1000/malformed-email",
+            title_en="Malformed email response",
+            title_zh="异常邮件响应",
+            article_url="https://example.org/malformed-email",
+        )
+        with patch("app.services.push_email.subprocess.run") as run:
+            run.return_value.returncode = 0
+            run.return_value.stdout = "prefix {not-json} suffix"
+            run.return_value.stderr = ""
+            with self.assertRaises(PushEmailError):
+                send_push_email(recipient=recipient, sender=sender, paper=paper, note="")
 
     def test_email_notification_is_queued_without_blocking_request(self) -> None:
         with TestClient(self.app_factory()) as client:

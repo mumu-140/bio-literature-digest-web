@@ -7,10 +7,13 @@ from sqlalchemy.orm import Session
 from ..deps import get_db, require_admin
 from ..integrations.producer_import.service import ImportStatusError, check_and_import_latest_runs, import_run_by_id, list_run_statuses
 from ..integrations.producer_import.user_sync import sync_users_from_producer_config
-from ..models import ImportedLiteratureItem, LiteraturePushV2, User
+from ..models import User
 from ..schemas import (
     ImportResult,
     ImportRunRead,
+    PaperPushBatchCreate,
+    PaperPushBatchItemRead,
+    PaperPushBatchRead,
     PaperPushCreate,
     PaperPushRead,
     SubscriptionEmailCreate,
@@ -20,6 +23,7 @@ from ..schemas import (
     UserUpdate,
 )
 from ..services.audit import record_action
+from ..services.pushes import PushRequestError, create_push_batch
 from ..services.subscription_users import SubscriptionEmailExistsError, add_subscription_email
 from ..services.user_visibility import require_visible_target_user, visible_user_statement
 from ..services.user_sync import derive_display_name
@@ -166,39 +170,67 @@ def reimport_producer_run(
     return ImportResult(**result.__dict__)
 
 
+@router.post("/pushes/batch", response_model=PaperPushBatchRead, status_code=status.HTTP_201_CREATED)
+def push_papers_to_users(
+    payload: PaperPushBatchCreate,
+    admin_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> PaperPushBatchRead:
+    try:
+        batch = create_push_batch(
+            db,
+            admin_user=admin_user,
+            paper_ids=payload.paper_ids,
+            recipient_user_ids=payload.recipient_user_ids,
+            note=payload.note,
+            send_email_notification=payload.send_email_notification,
+        )
+    except PushRequestError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return PaperPushBatchRead(
+        batch_id=batch.batch_id,
+        paper_count=len(batch.paper_ids),
+        recipient_count=len(batch.recipient_user_ids),
+        created_count=len(batch.pushes),
+        email_queued_count=(
+            len(batch.recipient_user_ids) if payload.send_email_notification else 0
+        ),
+        items=[
+            PaperPushBatchItemRead(
+                push_id=push.id,
+                paper_id=push.literature_item_id or 0,
+                recipient_user_id=push.recipient_user_id,
+                email_notification_status=push.email_notification_status,
+            )
+            for push in batch.pushes
+        ],
+    )
+
+
 @router.post("/pushes", response_model=PaperPushRead, status_code=status.HTTP_201_CREATED)
 def push_paper_to_user(
     payload: PaperPushCreate,
     admin_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> PaperPushRead:
-    recipient = require_visible_target_user(db, admin_user, payload.recipient_user_id)
-    paper = db.get(ImportedLiteratureItem, payload.paper_id)
-    if paper is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
-    push = LiteraturePushV2(
-        literature_item_id=paper.id,
-        literature_item_key=paper.literature_item_key,
-        recipient_user_id=recipient.id,
-        sent_by_user_id=admin_user.id,
-        note=payload.note.strip(),
-        email_notification_status="pending" if payload.send_email_notification else "not_requested",
-    )
-    db.add(push)
-    db.flush()
-    record_action(
-        db,
-        action_type="admin_push_paper",
-        actor_user_id=admin_user.id,
-        target_user_id=recipient.id,
-        entity_type="paper",
-        entity_id=paper.id,
-        detail={"note": payload.note.strip(), "canonical_key": paper.literature_item_key},
-    )
-    db.commit()
-    db.refresh(push)
+    try:
+        batch = create_push_batch(
+            db,
+            admin_user=admin_user,
+            paper_ids=[payload.paper_id],
+            recipient_user_ids=[payload.recipient_user_id],
+            note=payload.note,
+            send_email_notification=payload.send_email_notification,
+            batch_id="",
+        )
+    except PushRequestError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    push = batch.pushes[0]
+    paper = batch.papers[0]
+    recipient = batch.recipients[0]
     return PaperPushRead(
         id=push.id,
+        batch_id=push.batch_id,
         paper_id=paper.id,
         canonical_key=paper.literature_item_key,
         recipient_user_id=recipient.id,

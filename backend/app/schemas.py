@@ -175,8 +175,32 @@ class PaperPushCreate(BaseModel):
     send_email_notification: bool = True
 
 
+class PaperPushBatchCreate(BaseModel):
+    paper_ids: list[int] = Field(min_length=1, max_length=100)
+    recipient_user_ids: list[int] = Field(min_length=1, max_length=20)
+    note: str = Field(default="", max_length=2000)
+    send_email_notification: bool = True
+
+
+class PaperPushBatchItemRead(BaseModel):
+    push_id: int
+    paper_id: int
+    recipient_user_id: int
+    email_notification_status: str
+
+
+class PaperPushBatchRead(BaseModel):
+    batch_id: str
+    paper_count: int
+    recipient_count: int
+    created_count: int
+    email_queued_count: int
+    items: list[PaperPushBatchItemRead]
+
+
 class PaperPushRead(BaseModel):
     id: int
+    batch_id: str = ""
     paper_id: int
     canonical_key: str
     recipient_user_id: int

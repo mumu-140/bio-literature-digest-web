@@ -20,6 +20,7 @@ def serialize_push(push: LiteraturePushV2) -> PaperPushRead:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Push item missing local content")
     return PaperPushRead(
         id=push.id,
+        batch_id=push.batch_id,
         paper_id=push.literature_item.id,
         canonical_key=push.literature_item_key,
         recipient_user_id=push.recipient_user_id,

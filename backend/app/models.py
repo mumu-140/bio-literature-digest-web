@@ -284,6 +284,7 @@ class LiteraturePushV2(Base):
     literature_item_key: Mapped[str] = mapped_column(String(512), index=True)
     recipient_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     sent_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    batch_id: Mapped[str] = mapped_column(String(36), default="", index=True)
     note: Mapped[str] = mapped_column(Text, default="")
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     pushed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

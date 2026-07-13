@@ -13,6 +13,7 @@ def run_runtime_migrations(engine: Engine) -> None:
     _migrate_user_producer_uid(engine)
     _migrate_session_auth_method(engine)
     _migrate_push_email_fields(engine)
+    _migrate_push_batch_fields(engine)
     install_performance_indexes(engine)
     ensure_search_index(engine)
     ensure_library_stats(engine)
@@ -92,4 +93,20 @@ def _migrate_push_email_fields(engine: Engine) -> None:
         connection.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_literature_pushes_v2_email_notification_status "
             "ON literature_pushes_v2 (email_notification_status)"
+        ))
+
+
+def _migrate_push_batch_fields(engine: Engine) -> None:
+    inspector = inspect(engine)
+    if "literature_pushes_v2" not in set(inspector.get_table_names()):
+        return
+    columns = {column["name"] for column in inspector.get_columns("literature_pushes_v2")}
+    with engine.begin() as connection:
+        if "batch_id" not in columns:
+            connection.execute(text(
+                "ALTER TABLE literature_pushes_v2 ADD COLUMN batch_id VARCHAR(36) NOT NULL DEFAULT ''"
+            ))
+        connection.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_literature_pushes_v2_batch_id "
+            "ON literature_pushes_v2 (batch_id)"
         ))
