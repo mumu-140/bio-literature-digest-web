@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import date
 from pathlib import Path
 
@@ -113,6 +114,7 @@ class PaperLibraryApiTest(unittest.TestCase):
                 interest_tag="平台",
                 title_en="Paper D",
                 title_zh="论文 D",
+                tags_json=["平台"],
             )
             paper_e = ImportedLiteratureItem(
                 literature_item_key="doi:10.1000/e",
@@ -284,6 +286,35 @@ class PaperLibraryApiTest(unittest.TestCase):
             self.assertEqual(len(second.json()["items"]), 2)
             self.assertFalse(second.json()["has_more"])
 
+
+    def test_library_group_pagination_does_not_load_the_full_group(self) -> None:
+        with TestClient(self.app_factory()) as client:
+            login = client.post("/api/auth/login", json={"email": "admin@example.com"})
+            self.assertEqual(login.status_code, 200)
+            self._seed_papers()
+
+            with patch(
+                "app.services.paper_library.load_paper_library_papers",
+                side_effect=AssertionError("full group loader must not be used"),
+            ):
+                response = client.get("/api/papers/library/groups/2026-04-09?page=1&page_size=2")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["paper_count"], 4)
+            self.assertEqual(len(response.json()["items"]), 2)
+            self.assertTrue(response.json()["has_more"])
+
+    def test_library_group_sql_pagination_supports_tag_filter(self) -> None:
+        with TestClient(self.app_factory()) as client:
+            login = client.post("/api/auth/login", json={"email": "admin@example.com"})
+            self.assertEqual(login.status_code, 200)
+            self._seed_papers()
+
+            response = client.get("/api/papers/library/groups/2026-04-09?tag=%E5%B9%B3%E5%8F%B0")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["paper_count"], 1)
+            self.assertEqual(response.json()["items"][0]["title_en"], "Paper D")
 
     def test_library_search_uses_indexed_text(self) -> None:
         with TestClient(self.app_factory()) as client:

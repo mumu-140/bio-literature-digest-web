@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from ..models import ImportedDigestMembership, ImportedLiteratureItem, UserLiteratureFavorite
 from ..schemas import DigestPaper, PaperLibraryGroup, PaperLibraryGroupSummary, PaperLibraryOverview
 from .library_stats import load_library_stats
+from .paper_library_pagination import load_group_page
 from .search_index import apply_full_text_filter, search_index_available
 
 DEFAULT_LIBRARY_SORT = "publish_date_desc"
@@ -151,18 +152,25 @@ def load_paper_library_group(
         publish_date=requested_publish_date,
         sort=normalize_library_sort(filters.sort),
     )
-    papers = load_paper_library_papers(db, user_id, normalized_filters)
-    ordered_items = _sort_group_items(papers)
-    start = (page - 1) * page_size
-    end = start + page_size
-    return PaperLibraryGroup(
-        publish_date=requested_publish_date,
-        paper_count=len(ordered_items),
-        items=ordered_items[start:end],
+    paper_count, items = load_group_page(
+        db,
+        user_id,
+        normalized_filters,
         page=page,
         page_size=page_size,
-        has_more=end < len(ordered_items),
+        apply_text_filter=_apply_text_filter,
+        build_paper=build_digest_paper,
     )
+    return PaperLibraryGroup(
+        publish_date=requested_publish_date,
+        paper_count=paper_count,
+        items=items,
+        page=page,
+        page_size=page_size,
+        has_more=page * page_size < paper_count,
+    )
+
+
 
 
 def collect_paper_library_filter_options(db: Session) -> dict[str, list[str]]:
