@@ -5,13 +5,11 @@ import {
   PaperItem,
   PaperLibraryGroup,
   PaperLibraryOverview,
-  createPush,
   fetchPaperLibraryGroup,
   toggleFavorite as toggleFavoriteRequest,
 } from "../../dataClient";
 import { importIntoEndNote, importIntoZotero } from "../../referenceImport";
 import { exportSelectedPapers } from "../shared/paperExport";
-import { useAdminUsers } from "../shared/WorkbenchUi";
 import {
   restoreDigestPageCache,
   restoreDigestPageState,
@@ -20,7 +18,6 @@ import {
   DIGEST_TOAST_DURATION_MS,
 } from "./config";
 import {
-  useDefaultPushTarget,
   useDigestScrollPersistence,
   useDigestSnapshotPersistence,
   useDigestViewportTracking,
@@ -30,6 +27,7 @@ import {
   useSelectionCleanup,
   useToastTimeout,
 } from "./digestEffects";
+import { useDigestPush } from "./useDigestPush";
 import {
   PaperFilters,
   arePaperFiltersEqual,
@@ -51,7 +49,6 @@ export type ToastState = {
 
 export function useDigestLibrary({ user }: { user: AuthUser }) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const adminUsers = useAdminUsers(user.role === "admin");
   const hasExplicitDigestParams = hasDigestSearchParams(searchParams);
   const storedDigestState = restoreDigestPageState();
   const initialFilters = hasExplicitDigestParams
@@ -64,11 +61,6 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
   const [loadedGroups, setLoadedGroups] = useState<Record<string, PaperLibraryGroup>>(() => buildLoadedGroupMap(initialLoadedGroups));
   const [filters, setFilters] = useState<PaperFilters>(initialFilters);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
-  const [pushTargetUserId, setPushTargetUserId] = useState("");
-  const [pushNote, setPushNote] = useState("");
-  const [sendPushEmail, setSendPushEmail] = useState(true);
-  const [pushMessage, setPushMessage] = useState("");
-  const [pushingPaperId, setPushingPaperId] = useState<number | null>(null);
   const [loadingOverview, setLoadingOverview] = useState(storedDigestCache?.overview ? false : true);
   const [refreshingOverview, setRefreshingOverview] = useState(false);
   const [loadingGroupDates, setLoadingGroupDates] = useState<string[]>([]);
@@ -97,13 +89,13 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
   const categoryOptions = overview?.available_categories || [];
   const tagOptions = overview?.available_tags || [];
   const loadedPapers = collectLoadedPapers(loadedGroups, groupSummaries);
+  const digestPush = useDigestPush({ user, loadedPapers, selectedKeys });
   const visibleLoadedPapers = collectVisibleLoadedPapers(loadedGroups, expandedPublishDates, groupSummaries);
   const selectedKeySet = new Set(selectedKeys);
   const pendingFavoriteIdSet = new Set(pendingFavoriteIds);
   const allVisibleSelected = visibleLoadedPapers.length > 0 && visibleLoadedPapers.every((paper) => selectedKeySet.has(getPaperSelectionKey(paper)));
 
   useSearchFilterSync(searchParams, setFilters);
-  useDefaultPushTarget(user, adminUsers, pushTargetUserId, setPushTargetUserId);
   useFilterUrlSync(filters, setSearchParams);
   useOverviewLoader({
     appliedFilters,
@@ -203,26 +195,6 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
     setExportMessage(`已导出 ${selected.length} 条${kind === "metadata" ? "元数据" : " DOI"}。`);
   }
 
-  async function pushPaper(item: PaperItem) {
-    if (user.role !== "admin") {
-      return;
-    }
-    if (!pushTargetUserId.trim()) {
-      setPushMessage("先填写接收账户 ID。");
-      return;
-    }
-    setPushingPaperId(item.id);
-    setPushMessage("");
-    try {
-      await createPush({ paper_id: item.id, recipient_user_id: Number(pushTargetUserId), note: pushNote, send_email_notification: sendPushEmail });
-      setPushMessage("已将《" + item.title_en + "》推送给账户 " + pushTargetUserId + (sendPushEmail ? "，邮件提醒已进入发送队列。" : "。"));
-    } catch (error) {
-      setPushMessage(error instanceof Error ? error.message : "推送失败，请稍后重试。");
-    } finally {
-      setPushingPaperId(null);
-    }
-  }
-
   async function ensureGroupLoaded(publishDate: string) {
     if (loadedGroups[publishDate]) {
       return;
@@ -303,7 +275,7 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
   }
 
   return {
-    adminUsers,
+    ...digestPush,
     filters,
     setFilters,
     publishDateOptions,
@@ -311,13 +283,6 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
     tagOptions,
     overview,
     selectedKeys,
-    pushTargetUserId,
-    setPushTargetUserId,
-    pushNote,
-    setPushNote,
-    sendPushEmail,
-    setSendPushEmail,
-    pushMessage,
     allVisibleSelected,
     visibleLoadedPapers,
     exportMessage,
@@ -330,7 +295,6 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
     expandedPublishDates,
     selectedKeySet,
     pendingFavoriteIdSet,
-    pushingPaperId,
     favoriteToast,
     setFavoriteToast,
     refreshOverview: () => setRequestVersion((current) => current + 1),
@@ -343,7 +307,6 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
     togglePublishDateGroup,
     togglePaperSelection,
     toggleFavorite,
-    pushPaper,
     loadMoreGroup,
   };
 }

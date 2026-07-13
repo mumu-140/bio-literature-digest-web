@@ -942,9 +942,148 @@ tbody tr:hover {
   background: linear-gradient(135deg, rgba(225, 238, 231, 0.66), rgba(244, 234, 216, 0.76));
   border: 1px solid rgba(118, 102, 73, 0.08);
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto minmax(180px, auto);
   gap: 10px;
+  align-items: start;
+}
+
+.push-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.push-field > input {
+  width: 100%;
+}
+
+.multi-user-select {
+  min-width: 0;
+}
+
+.multi-user-select summary {
+  min-height: 42px;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+  list-style: none;
+}
+
+.multi-user-select summary::-webkit-details-marker {
+  display: none;
+}
+
+.multi-user-select summary::after {
+  content: "⌄";
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.multi-user-select[open] summary {
+  border-color: rgba(23, 63, 52, 0.28);
+}
+
+.multi-user-popover {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.multi-user-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.multi-user-actions span {
+  margin-right: auto;
+}
+
+.multi-user-options {
+  display: grid;
+  gap: 4px;
+  max-height: 210px;
+  overflow-y: auto;
+}
+
+.multi-user-option {
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  padding: 6px 7px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.multi-user-option:hover {
+  background: rgba(23, 63, 52, 0.06);
+}
+
+.multi-user-option span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.multi-user-option strong,
+.multi-user-option small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multi-user-option small {
+  color: var(--muted);
+}
+
+.push-email-toggle {
+  min-height: 42px;
+  align-self: end;
+}
+
+.push-batch-command {
+  display: grid;
+  gap: 6px;
+  align-self: end;
+}
+
+.push-batch-command .primary-button {
+  width: 100%;
+  justify-content: center;
+}
+
+.push-feedback {
+  grid-column: 1 / -1;
+  padding: 9px 11px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+
+.push-feedback.is-success {
+  background: rgba(201, 226, 214, 0.42);
+  color: #173f34;
+}
+
+.push-feedback.is-error {
+  background: rgba(244, 214, 207, 0.5);
+  color: #8a3025;
 }
 
 .mapping-row {

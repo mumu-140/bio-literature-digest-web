@@ -23,6 +23,7 @@ type PaperTableProps = {
   onFavorite: (item: PaperItem) => void;
   onPush?: (item: PaperItem) => void;
   pushingPaperId?: number | null;
+  pushPending?: boolean;
 };
 
 export function PaperTable(props: PaperTableProps) {
@@ -83,7 +84,7 @@ function MobilePaperCard({ paper, ...props }: PaperTableProps & { paper: PaperIt
             {pending ? "处理中…" : paper.is_favorited ? "取消收藏" : "加入收藏"}
           </button>
           {props.onPush ? (
-            <button className="table-link" onClick={() => props.onPush?.(paper)} disabled={props.pushingPaperId !== null}>
+            <button className="table-link" onClick={() => props.onPush?.(paper)} disabled={props.pushPending}>
               {props.pushingPaperId === paper.id ? "推送中…" : "推送"}
             </button>
           ) : null}
@@ -140,7 +141,7 @@ function DesktopPaperRow({ paper, ...props }: PaperTableProps & { paper: PaperIt
             {pending ? "处理中…" : paper.is_favorited ? "取消" : "收藏"}
           </button>
           {props.onPush ? (
-            <button className="table-link" onClick={() => props.onPush?.(paper)} disabled={props.pushingPaperId !== null}>
+            <button className="table-link" onClick={() => props.onPush?.(paper)} disabled={props.pushPending}>
               {props.pushingPaperId === paper.id ? "推送中…" : "推送"}
             </button>
           ) : null}

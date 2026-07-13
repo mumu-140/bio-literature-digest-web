@@ -116,6 +116,7 @@ function ExpandedGroup({
         onFavorite={digest.toggleFavorite}
         onPush={user.role === "admin" ? digest.pushPaper : undefined}
         pushingPaperId={digest.pushingPaperId}
+        pushPending={digest.isPushPending}
       />
       {groupData?.has_more ? (
         <div className="actions">

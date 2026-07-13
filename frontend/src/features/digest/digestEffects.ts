@@ -1,10 +1,8 @@
 import { Dispatch, SetStateAction, useEffect } from "react";
 import {
-  AuthUser,
   PaperItem,
   PaperLibraryGroup,
   PaperLibraryOverview,
-  UserItem,
   fetchPaperLibraryOverview,
 } from "../../dataClient";
 import {
@@ -39,19 +37,6 @@ export function useSearchFilterSync(
     const nextFilters = buildPaperFiltersFromSearchParams(searchParams);
     setFilters((current) => (arePaperFiltersEqual(current, nextFilters) ? current : nextFilters));
   }, [searchParams, setFilters]);
-}
-
-export function useDefaultPushTarget(
-  user: AuthUser,
-  adminUsers: UserItem[],
-  pushTargetUserId: string,
-  setPushTargetUserId: SetState<string>,
-) {
-  useEffect(() => {
-    if (user.role === "admin" && adminUsers.length && !pushTargetUserId) {
-      setPushTargetUserId(String(adminUsers[0].id));
-    }
-  }, [adminUsers, pushTargetUserId, setPushTargetUserId, user.role]);
 }
 
 export function useFilterUrlSync(

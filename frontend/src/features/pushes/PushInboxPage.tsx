@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
-import { AuthUser, listPushes, PaperPushItem, updatePush } from "../../dataClient";
+import { AuthUser } from "../../dataClient";
+import { listPushes, PaperPushItem, updatePush } from "./pushClient";
 import {
   EmptyState,
   formatPushEmailStatus,

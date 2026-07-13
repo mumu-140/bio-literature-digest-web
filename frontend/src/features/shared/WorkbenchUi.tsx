@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { fetchAdminUsers, PaperPushItem, UserItem } from "../../dataClient";
+import { fetchAdminUsers, UserItem } from "../../dataClient";
+import { PaperPushItem } from "../pushes/pushClient";
 
 export function useAdminUsers(enabled: boolean) {
   const [users, setUsers] = useState<UserItem[]>([]);
@@ -78,6 +79,90 @@ export function UserSelect({
         </option>
       ))}
     </select>
+  );
+}
+
+
+export function UserMultiSelect({
+  users,
+  values,
+  onChange,
+  placeholder,
+  maxSelected = 20,
+}: {
+  users: UserItem[];
+  values: string[];
+  onChange: (values: string[]) => void;
+  placeholder: string;
+  maxSelected?: number;
+}) {
+  const activeUsers = users.filter((user) => user.is_active);
+  const activeIds = new Set(activeUsers.map((user) => String(user.id)));
+  const selectedValues = values.filter((value) => activeIds.has(value));
+  const summary = selectedValues.length ? "已选 " + String(selectedValues.length) + " 人" : placeholder;
+
+  return (
+    <details className="multi-user-select">
+      <summary aria-label={placeholder}>{summary}</summary>
+      <MultiUserOptions
+        users={activeUsers}
+        values={selectedValues}
+        onChange={onChange}
+        maxSelected={maxSelected}
+      />
+    </details>
+  );
+}
+
+function MultiUserOptions({
+  users,
+  values,
+  onChange,
+  maxSelected,
+}: {
+  users: UserItem[];
+  values: string[];
+  onChange: (values: string[]) => void;
+  maxSelected: number;
+}) {
+  const valueSet = new Set(values);
+  const allValues = users.slice(0, maxSelected).map((user) => String(user.id));
+  const toggleUser = (userId: string) => {
+    if (valueSet.has(userId)) {
+      onChange(values.filter((value) => value !== userId));
+    } else if (values.length < maxSelected) {
+      onChange([...values, userId]);
+    }
+  };
+
+  return (
+    <div className="multi-user-popover">
+      <div className="multi-user-actions">
+        <span>{users.length} 名可用接收人</span>
+        <button type="button" className="table-link" onClick={() => onChange(allValues)}>全选</button>
+        <button type="button" className="table-link" onClick={() => onChange([])}>清空</button>
+      </div>
+      <div className="multi-user-options" role="group" aria-label="接收账户">
+        {users.map((user) => {
+          const userId = String(user.id);
+          const checked = valueSet.has(userId);
+          return (
+            <label className="multi-user-option" key={user.id}>
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={!checked && values.length >= maxSelected}
+                onChange={() => toggleUser(userId)}
+              />
+              <span>
+                <strong>{user.name || user.email}</strong>
+                <small>{user.email}</small>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
