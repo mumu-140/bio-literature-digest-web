@@ -103,7 +103,7 @@ export function UserMultiSelect({
 
   return (
     <details className="multi-user-select">
-      <summary aria-label={placeholder}>{summary}</summary>
+      <summary aria-label={"接收人：" + summary}>{summary}</summary>
       <MultiUserOptions
         users={activeUsers}
         values={selectedValues}
@@ -127,6 +127,9 @@ function MultiUserOptions({
 }) {
   const valueSet = new Set(values);
   const allValues = users.slice(0, maxSelected).map((user) => String(user.id));
+  const selectAllLabel = users.length > maxSelected
+    ? "全选前 " + String(maxSelected) + " 人"
+    : "全选";
   const toggleUser = (userId: string) => {
     if (valueSet.has(userId)) {
       onChange(values.filter((value) => value !== userId));
@@ -139,7 +142,9 @@ function MultiUserOptions({
     <div className="multi-user-popover">
       <div className="multi-user-actions">
         <span>{users.length} 名可用接收人</span>
-        <button type="button" className="table-link" onClick={() => onChange(allValues)}>全选</button>
+        <button type="button" className="table-link" onClick={() => onChange(allValues)}>
+          {selectAllLabel}
+        </button>
         <button type="button" className="table-link" onClick={() => onChange([])}>清空</button>
       </div>
       <div className="multi-user-options" role="group" aria-label="接收账户">

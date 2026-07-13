@@ -52,7 +52,7 @@ function AdminPushControls({ user, digest }: ControlsProps) {
   if (user.role !== "admin") return null;
   return (
     <div className="push-bar">
-      <label className="push-field">
+      <div className="push-field">
         <span>接收人</span>
         <UserMultiSelect
           users={digest.adminUsers}
@@ -60,7 +60,7 @@ function AdminPushControls({ user, digest }: ControlsProps) {
           onChange={digest.setPushTargetUserIds}
           placeholder="选择接收账户"
         />
-      </label>
+      </div>
       <label className="push-field">
         <span>推送备注</span>
         <input
