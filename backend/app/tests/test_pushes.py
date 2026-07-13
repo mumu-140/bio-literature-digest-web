@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -158,6 +159,30 @@ class PushFlowTest(unittest.TestCase):
             run.return_value.stderr = ""
             with self.assertRaises(PushEmailError):
                 send_push_email(recipient=recipient, sender=sender, paper=paper, note="")
+
+    def test_email_sender_wraps_service_timeout(self) -> None:
+        from app.services.push_email import PushEmailError, send_push_email
+
+        recipient = User(email="member@example.com", name="Member", role="member", is_active=True)
+        sender = User(email="admin@example.com", name="Admin", role="admin", is_active=True)
+        paper = ImportedLiteratureItem(
+            literature_item_key="doi:10.1000/timeout-email",
+            title_en="Timeout email response",
+            title_zh="邮件服务超时",
+            article_url="https://example.org/timeout-email",
+        )
+        with patch("app.services.push_email.subprocess.run") as run:
+            run.side_effect = subprocess.TimeoutExpired(
+                cmd=["agently-cli", "message", "+send"],
+                timeout=30,
+            )
+            with self.assertRaisesRegex(PushEmailError, "超时"):
+                send_push_email(
+                    recipient=recipient,
+                    sender=sender,
+                    paper=paper,
+                    note="",
+                )
 
     def test_email_notification_is_queued_without_blocking_request(self) -> None:
         with TestClient(self.app_factory()) as client:

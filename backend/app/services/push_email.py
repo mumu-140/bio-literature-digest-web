@@ -76,7 +76,12 @@ def _send_message(*, recipient: User, subject: str, body: str) -> None:
 
 
 def _run(command: list[str]) -> dict[str, object]:
-    completed = subprocess.run(command, text=True, capture_output=True, check=False, timeout=30)
+    try:
+        completed = subprocess.run(
+            command, text=True, capture_output=True, check=False, timeout=30,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise PushEmailError("邮件服务调用超时") from exc
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout).strip()
         raise PushEmailError(f"邮件服务调用失败：{detail or completed.returncode}")
