@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import date
 from pathlib import Path
 
@@ -149,3 +150,30 @@ class PushFlowTest(unittest.TestCase):
             )
             self.assertEqual(response.status_code, 201)
             self.assertEqual(response.json()["email_notification_status"], "pending")
+
+
+    def test_email_worker_marks_queued_push_as_sent(self) -> None:
+        from app.models import LiteraturePushV2
+        from app.services.push_email_queue import process_push_email_jobs
+
+        with TestClient(self.app_factory()) as client:
+            login = client.post("/api/auth/login", json={"email": "admin@example.com"})
+            paper_id = self._seed_imported_paper()
+            response = client.post(
+                "/api/admin/pushes",
+                json={
+                    "paper_id": paper_id,
+                    "recipient_user_id": login.json()["user"]["id"],
+                    "send_email_notification": True,
+                },
+            )
+            push_id = response.json()["id"]
+
+        with database.SessionLocal() as db:
+            with patch("app.services.push_email_queue.send_push_email") as send:
+                self.assertEqual(process_push_email_jobs(db), 1)
+                send.assert_called_once()
+            push = db.get(LiteraturePushV2, push_id)
+            self.assertEqual(push.email_notification_status, "sent")
+            self.assertEqual(push.email_notification_attempts, 1)
+            self.assertIsNotNone(push.email_notification_sent_at)
