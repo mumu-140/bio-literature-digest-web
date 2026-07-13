@@ -1,4 +1,4 @@
-import { importIntoZotero } from "./referenceImport";
+import { importIntoEndNote, importIntoZotero } from "./referenceImport";
 
 import { FormEvent, ReactNode, useDeferredValue, useEffect, useRef, useState } from "react";
 import {
@@ -619,10 +619,14 @@ function DigestPage({ user }: { user: AuthUser }) {
     });
   }
 
-  function importSelectedIntoZotero() {
+  function importSelectedReferences(target: "zotero" | "endnote") {
     const selected = loadedPapers.filter((item) => selectedKeys.includes(getPaperSelectionKey(item)));
-    importIntoZotero(selected);
-    setExportMessage(`已生成 ${selected.length} 篇文献的 Zotero 导入文件。`);
+    if (target === "zotero") {
+      importIntoZotero(selected);
+    } else {
+      importIntoEndNote(selected);
+    }
+    setExportMessage(`已生成 ${selected.length} 篇文献的 ${target === "zotero" ? "Zotero" : "EndNote"} 导入文件。`);
   }
 
   function runSelectedExport(kind: "metadata" | "doi-list") {
@@ -805,7 +809,8 @@ function DigestPage({ user }: { user: AuthUser }) {
           <div className="actions">
             <span className="selection-copy">已选 {selectedKeys.length} 篇</span>
             <button className="ghost-button" onClick={clearSelection} disabled={!selectedKeys.length}>清空选择</button>
-            <button className="primary-button" onClick={importSelectedIntoZotero} disabled={!selectedKeys.length}>导入 Zotero</button>
+            <button className="primary-button" onClick={() => importSelectedReferences("zotero")} disabled={!selectedKeys.length}>导入 Zotero</button>
+            <button className="ghost-button" onClick={() => importSelectedReferences("endnote")} disabled={!selectedKeys.length}>导入 EndNote</button>
             <button className="ghost-button" onClick={() => runSelectedExport("metadata")} disabled={!selectedKeys.length}>导出选中元数据</button>
             <button className="ghost-button" onClick={() => runSelectedExport("doi-list")} disabled={!selectedKeys.length}>导出选中 DOI</button>
           </div>
@@ -1222,9 +1227,13 @@ function FavoritesPage({ user }: { user: AuthUser }) {
     });
   }
 
-  function importSelectedFavoritesIntoZotero() {
+  function importSelectedFavoriteReferences(target: "zotero" | "endnote") {
     const selected = favorites.filter((favorite) => selectedIds.includes(favorite.id));
-    importIntoZotero(selected);
+    if (target === "zotero") {
+      importIntoZotero(selected);
+    } else {
+      importIntoEndNote(selected);
+    }
   }
 
   function exportFavorites(kind: "metadata" | "doi-list") {
@@ -1318,7 +1327,8 @@ function FavoritesPage({ user }: { user: AuthUser }) {
         <div className="actions">
           <span className="selection-copy">已选 {selectedIds.length} 篇</span>
           <button className="ghost-button" onClick={clearSelection} disabled={!selectedIds.length}>清空选择</button>
-          <button className="primary-button" onClick={importSelectedFavoritesIntoZotero} disabled={!selectedIds.length}>导入 Zotero</button>
+          <button className="primary-button" onClick={() => importSelectedFavoriteReferences("zotero")} disabled={!selectedIds.length}>导入 Zotero</button>
+          <button className="ghost-button" onClick={() => importSelectedFavoriteReferences("endnote")} disabled={!selectedIds.length}>导入 EndNote</button>
           <button className="ghost-button" onClick={() => exportFavorites("metadata")} disabled={!selectedIds.length}>导出选中元数据</button>
           <button className="ghost-button" onClick={() => exportFavorites("doi-list")} disabled={!selectedIds.length}>导出选中 DOI</button>
         </div>
