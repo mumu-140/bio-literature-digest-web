@@ -67,6 +67,20 @@ class LoginResponse(BaseModel):
     user: AuthUser
 
 
+class DeerFlowSsoIssueRequest(BaseModel):
+    subject: str = Field(min_length=1, max_length=128)
+    email: EmailStr
+    name: str = Field(default="", max_length=255)
+    next_path: str = Field(default="/papers/published", max_length=512)
+
+
+class DeerFlowSsoIssueResponse(BaseModel):
+    ticket: str
+    consume_url: str
+    expires_in: int
+    created_user: bool
+
+
 class DigestPaper(BaseModel):
     id: int
     canonical_key: str

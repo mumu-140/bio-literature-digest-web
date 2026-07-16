@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     session_cookie_name: str = "bio_digest_session"
     session_cookie_secure: bool = False
     session_ttl_hours: int = 24 * 14
+    deerflow_sso_ticket_ttl_seconds: int = Field(default=120, ge=30, le=600)
     session_secret: str = "change-me"
     cst_timezone: str = "Asia/Shanghai"
     web_base_url: str = "http://127.0.0.1:18001"

@@ -7,11 +7,12 @@ from datetime import datetime, timedelta
 from .config import get_settings
 
 
-def create_session_token() -> tuple[str, str, datetime]:
+def create_session_token(*, ttl_seconds: int | None = None) -> tuple[str, str, datetime]:
     settings = get_settings()
     token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(f"{settings.session_secret}:{token}".encode("utf-8")).hexdigest()
-    expires_at = datetime.utcnow() + timedelta(hours=settings.session_ttl_hours)
+    lifetime = timedelta(seconds=ttl_seconds) if ttl_seconds is not None else timedelta(hours=settings.session_ttl_hours)
+    expires_at = datetime.utcnow() + lifetime
     return token, token_hash, expires_at
 
 
