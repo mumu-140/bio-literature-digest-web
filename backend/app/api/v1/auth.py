@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ...config import get_settings
@@ -48,6 +48,12 @@ def issue_deerflow_sso(
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
 
+    db.execute(
+        delete(UserSession).where(
+            UserSession.auth_method == "deerflow-pending",
+            UserSession.expires_at < datetime.utcnow(),
+        )
+    )
     ticket, ticket_hash, expires_at = create_session_token(
         ttl_seconds=settings.deerflow_sso_ticket_ttl_seconds,
     )
