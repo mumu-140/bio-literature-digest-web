@@ -1,6 +1,7 @@
 import { AuthUser, DigestSortKey } from "../../dataClient";
 import { MetricTile, UserMultiSelect } from "../shared/WorkbenchUi";
 import { DigestController } from "./useDigestLibrary";
+import { MAX_DEERFLOW_DISCUSSION_PAPERS } from "./deerflowDiscussion";
 
 type ControlsProps = {
   user: AuthUser;
@@ -152,6 +153,7 @@ function FilterControls({ digest }: { digest: DigestController }) {
 
 function SelectionControls({ digest }: { digest: DigestController }) {
   const hasSelection = digest.selectedKeys.length > 0;
+  const discussionOverLimit = digest.selectedKeys.length > MAX_DEERFLOW_DISCUSSION_PAPERS;
   return (
     <div className="selection-toolbar">
       <label className="check-row">
@@ -165,12 +167,24 @@ function SelectionControls({ digest }: { digest: DigestController }) {
       </label>
       <div className="actions">
         <span className="selection-copy">已选 {digest.selectedKeys.length} 篇</span>
+        <button
+          className="primary-button"
+          type="button"
+          onClick={digest.discussSelectedPapers}
+          disabled={!hasSelection || discussionOverLimit}
+          title={discussionOverLimit ? `一次最多讨论 ${MAX_DEERFLOW_DISCUSSION_PAPERS} 篇` : undefined}
+        >
+          在 DeerFlow 讨论
+        </button>
         <button className="ghost-button" onClick={digest.clearSelection} disabled={!hasSelection}>清空选择</button>
         <button className="ghost-button" onClick={() => digest.importSelectedReferences("zotero")} disabled={!hasSelection}>导入 Zotero</button>
         <button className="ghost-button" onClick={() => digest.importSelectedReferences("endnote")} disabled={!hasSelection}>导入 EndNote</button>
         <button className="ghost-button" onClick={() => digest.runSelectedExport("metadata")} disabled={!hasSelection}>导出选中元数据</button>
         <button className="ghost-button" onClick={() => digest.runSelectedExport("doi-list")} disabled={!hasSelection}>导出选中 DOI</button>
       </div>
+      {discussionOverLimit ? (
+        <span className="error-text">讨论最多选择 {MAX_DEERFLOW_DISCUSSION_PAPERS} 篇，请先缩小范围。</span>
+      ) : null}
     </div>
   );
 }

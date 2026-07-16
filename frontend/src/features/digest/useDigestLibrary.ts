@@ -41,6 +41,7 @@ import {
   hasDigestSearchParams,
   updateFavoriteStateInGroups,
 } from "./digestUtils";
+import { buildDeerFlowDiscussionUrl } from "./deerflowDiscussion";
 
 export type ToastState = {
   kind: "success" | "error";
@@ -195,6 +196,24 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
     setExportMessage(`已导出 ${selected.length} 条${kind === "metadata" ? "元数据" : " DOI"}。`);
   }
 
+  function openDeerFlowDiscussion(papers: PaperItem[]) {
+    try {
+      const url = buildDeerFlowDiscussionUrl(papers.map((paper) => paper.canonical_key));
+      const discussionWindow = window.open(url, "_blank", "noopener,noreferrer");
+      if (!discussionWindow) {
+        throw new Error("浏览器阻止了新标签页，请允许本站打开新标签页后重试。");
+      }
+      setExportMessage(`已将 ${papers.length} 篇文献交给 DeerFlow 准备讨论。`);
+    } catch (error) {
+      setExportMessage(error instanceof Error ? error.message : "无法打开 DeerFlow 讨论。");
+    }
+  }
+
+  function discussSelectedPapers() {
+    const selected = loadedPapers.filter((item) => selectedKeys.includes(getPaperSelectionKey(item)));
+    openDeerFlowDiscussion(selected);
+  }
+
   async function ensureGroupLoaded(publishDate: string) {
     if (loadedGroups[publishDate]) {
       return;
@@ -303,6 +322,8 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
     clearSelection,
     importSelectedReferences,
     runSelectedExport,
+    discussPaper: (paper: PaperItem) => openDeerFlowDiscussion([paper]),
+    discussSelectedPapers,
     scrollToDate,
     togglePublishDateGroup,
     togglePaperSelection,

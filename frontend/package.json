@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "npm run test:discussion",
+    "test:discussion": "node --test tests/deerflowDiscussion.test.cjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },

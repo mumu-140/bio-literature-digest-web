@@ -21,6 +21,7 @@ type PaperTableProps = {
   onToggleSelect: (item: PaperItem) => void;
   onToggleSelectAll: (items: PaperItem[]) => void;
   onFavorite: (item: PaperItem) => void;
+  onDiscuss: (item: PaperItem) => void;
   onPush?: (item: PaperItem) => void;
   pushingPaperId?: number | null;
   pushPending?: boolean;
@@ -83,6 +84,7 @@ function MobilePaperCard({ paper, ...props }: PaperTableProps & { paper: PaperIt
           <button className="table-link" onClick={() => props.onFavorite(paper)} disabled={pending}>
             {pending ? "处理中…" : paper.is_favorited ? "取消收藏" : "加入收藏"}
           </button>
+          <button className="table-link" onClick={() => props.onDiscuss(paper)}>讨论</button>
           {props.onPush ? (
             <button className="table-link" onClick={() => props.onPush?.(paper)} disabled={props.pushPending}>
               {props.pushingPaperId === paper.id ? "推送中…" : "推送"}
@@ -140,6 +142,7 @@ function DesktopPaperRow({ paper, ...props }: PaperTableProps & { paper: PaperIt
           <button className="table-link" onClick={() => props.onFavorite(paper)} disabled={pending}>
             {pending ? "处理中…" : paper.is_favorited ? "取消" : "收藏"}
           </button>
+          <button className="table-link" onClick={() => props.onDiscuss(paper)}>讨论</button>
           {props.onPush ? (
             <button className="table-link" onClick={() => props.onPush?.(paper)} disabled={props.pushPending}>
               {props.pushingPaperId === paper.id ? "推送中…" : "推送"}

@@ -114,6 +114,7 @@ function ExpandedGroup({
         onToggleSelect={digest.togglePaperSelection}
         onToggleSelectAll={digest.togglePaperBatch}
         onFavorite={digest.toggleFavorite}
+        onDiscuss={digest.discussPaper}
         onPush={user.role === "admin" ? digest.pushPaper : undefined}
         pushingPaperId={digest.pushingPaperId}
         pushPending={digest.isPushPending}
