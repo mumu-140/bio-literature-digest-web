@@ -135,3 +135,17 @@ flowchart LR
    - 检查后端 `http://127.0.0.1:8602/healthz`
 5. **台账同步**：
    - 同步更新 `/Users/mumu/workspace/VPS/servers/vps219.md` 和 `site/inventory.json`，确保基础设施台账记录最新版本号。
+
+---
+
+## 五、 VPS 运维操作规范与知识库联动（强制指引）
+
+本项目部署于云主机 `vps219`（121.36.250.219），任何涉及服务器层面的环境安装、服务配置、网络隧道、系统守护进程管理与版本升级，**必须以 VPS 架构知识库为基准规范**：
+
+- **VPS 规范总纲**：[`/Users/mumu/workspace/VPS/AGENTS.md`](file:///Users/mumu/workspace/VPS/AGENTS.md) 及 [`/Users/mumu/workspace/VPS/CLAUDE.md`](file:///Users/mumu/workspace/VPS/CLAUDE.md)
+- **vps219 机器台账**：[`/Users/mumu/workspace/VPS/servers/vps219.md`](file:///Users/mumu/workspace/VPS/servers/vps219.md)
+- **运维与联动守则**：
+  1. **【全局第一红线】绝对禁止在本地构建**：构建与部署动作只能通过 SSH 在 `vps219` 远端发起执行，绝不在 Mac 上产生构建产物。
+  2. **反向代理单入口原则**：Cloudflare Tunnel 与公网访问统一按 Host 分流，回源到统一入口，禁止绕过反代直连后端业务端口。
+  3. **变更闭环必同步台账**：无论更新了前端、后端还是生产端配置，部署完成后必须同步修改 `servers/vps219.md` 中的版本记录与更新说明，并同步更新 `site/inventory.json` 静态站点。
+  4. **严禁术语混淆**：明确区分“用户 Mac 本地”与“远端目标机环回口 127.0.0.1”，禁止任何用词歧义。
