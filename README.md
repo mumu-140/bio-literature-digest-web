@@ -24,9 +24,10 @@
 ## Runtime Model
 
 1. The producer finishes a run and writes producer SQLite rows.
-2. This web app imports the latest usable completed run into its local operational DB at startup, or via admin manual import/re-import.
-3. Archives and export artifacts are validation/fallback only; they do not block SQLite-based import.
-4. The UI reads local imported content, local favorites, local manual review, local pushes, and local export jobs.
+2. This web app imports the latest usable completed run into its local operational DB at startup.
+3. A local producer sync daemon keeps importing new producer runs on the configured schedule window.
+4. Archives and export artifacts are validation/fallback only; they do not block SQLite-based import.
+5. The UI reads local imported content, local favorites, local manual review, local pushes, and local export jobs.
 
 There is no analytics surface in the supported product.
 
@@ -57,7 +58,7 @@ Managed local-process workflow:
 ./stop.sh
 ```
 
-`start.sh` reads `bio-literature-config/env/web/deploy.env.local`, starts the backend, starts the frontend dev server, and optionally starts Cloudflare Tunnel when `ENABLE_TUNNEL=true`.
+`start.sh` reads `bio-literature-config/env/web/deploy.env.local`, starts the backend, starts the frontend dev server, starts the producer sync daemon, and optionally starts Cloudflare Tunnel when `ENABLE_TUNNEL=true`.
 
 ## Producer Integration
 
@@ -73,6 +74,7 @@ Read-only producer inputs:
 The supported import path is:
 
 - startup import check
+- producer sync daemon periodic import
 - admin import check
 - admin import specific run
 - admin force re-import specific run
@@ -123,5 +125,10 @@ This runs:
 - `npm run build` in `frontend/`
 - `python3 tools/audit_open_source.py`
 
-## Acknowledgments
-Special thanks to the **[Linux.do](https://linux.do/)** community for your support and feedback.
+## Linux DO Declaration
+
+Linux DO Declaration: this open-source baseline targets Linux operations (DO = Deployment Operator). All hostnames, paths, and account values in README/examples are placeholders and must be replaced before deployment.
+
+## Versioned REST API
+
+See docs/API_V1.md for REST API v1 authentication, literature retrieval, report lifecycle, rule suggestions, audit, and idempotency.

@@ -7,6 +7,7 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from pathlib import Path
 
 from .config import PROJECT_ROOT, get_instance_paths, get_settings
+from .services.database_tuning import configure_sqlite_engine
 
 
 class Base(DeclarativeBase):
@@ -30,6 +31,7 @@ def configure_database(database_url: Optional[str] = None) -> None:
         sqlite_path.parent.mkdir(parents=True, exist_ok=True)
     connect_args = {"check_same_thread": False} if resolved_url.startswith("sqlite") else {}
     engine = create_engine(resolved_url, future=True, connect_args=connect_args)
+    configure_sqlite_engine(engine)
     SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False)
 
 

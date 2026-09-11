@@ -12,6 +12,7 @@ from sqlalchemy import select
 
 from app import database
 from app.integrations.producer_import.service import check_and_import_latest_runs, import_run_by_id
+from app.main import sync_from_producer
 from app.models import (
     ImportedDigestMembership,
     ImportedDigestRun,
@@ -477,6 +478,28 @@ class ProducerSyncTest(unittest.TestCase):
         self.assertEqual(review.literature_item_id, item.id)
         self.assertEqual(review.review_final_decision, "keep")
         self.assertEqual(review.reviewer_notes, "keep this one")
+
+    def test_main_sync_from_producer_imports_latest_run(self) -> None:
+        sync_from_producer(trigger="startup")
+
+        with database.SessionLocal() as db:
+            digest_run = db.scalar(select(ImportedDigestRun).where(ImportedDigestRun.digest_date == date(2026, 4, 9)))
+            item = db.scalar(
+                select(ImportedLiteratureItem).where(ImportedLiteratureItem.literature_item_key == "doi:10.1000/test")
+            )
+            memberships = list(
+                db.scalars(
+                    select(ImportedDigestMembership)
+                    .where(ImportedDigestMembership.digest_date == date(2026, 4, 9))
+                    .order_by(ImportedDigestMembership.list_type.asc(), ImportedDigestMembership.row_index.asc())
+                )
+            )
+
+        self.assertIsNotNone(digest_run)
+        self.assertEqual(digest_run.source_run_id, "2026-04-09:new")
+        self.assertIsNotNone(item)
+        self.assertEqual(item.title_en, "New title")
+        self.assertEqual([(membership.list_type, membership.row_index) for membership in memberships], [("daily_review", 1), ("digest", 1)])
 
 
 if __name__ == "__main__":

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
+from app.config import Settings
 from app.integrations.producer_import.run_selection import latest_usable_runs_by_date
 from app.integrations.producer_import.source_reader import ProducerPaperRecord, ProducerRun
+from app.main import _inside_sync_window
 
 
 def _run(run_id: str, digest_date: str, updated_at_utc: str) -> ProducerRun:
@@ -74,6 +78,19 @@ class ProducerScheduleTest(unittest.TestCase):
         selected = latest_usable_runs_by_date(runs, records_by_run)
         self.assertEqual(len(selected), 1)
         self.assertEqual(selected[0].run.run_id, "usable")
+
+    def test_sync_window_matches_daily_8_to_9_shanghai(self) -> None:
+        settings = Settings(
+            producer_sync_window_start="08:00",
+            producer_sync_window_end="09:00",
+            cst_timezone="Asia/Shanghai",
+        )
+        tz = ZoneInfo("Asia/Shanghai")
+
+        self.assertTrue(_inside_sync_window(settings, now=datetime(2026, 4, 11, 8, 0, tzinfo=tz)))
+        self.assertTrue(_inside_sync_window(settings, now=datetime(2026, 4, 11, 8, 59, 59, tzinfo=tz)))
+        self.assertFalse(_inside_sync_window(settings, now=datetime(2026, 4, 11, 7, 59, 59, tzinfo=tz)))
+        self.assertFalse(_inside_sync_window(settings, now=datetime(2026, 4, 11, 9, 0, tzinfo=tz)))
 
 
 if __name__ == "__main__":

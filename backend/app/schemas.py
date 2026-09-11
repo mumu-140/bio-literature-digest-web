@@ -36,6 +36,20 @@ class UserRead(UserBase):
     last_login_at: Optional[datetime] = None
 
 
+class SubscriptionEmailCreate(BaseModel):
+    email: EmailStr
+    name: str = ""
+    user_group: str = "internal"
+
+
+class SubscriptionEmailRead(BaseModel):
+    uid: str
+    email: EmailStr
+    name: str
+    user_group: str
+    smtp_profile: str
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     name: str = ""
@@ -53,6 +67,20 @@ class LoginResponse(BaseModel):
     user: AuthUser
 
 
+class DeerFlowSsoIssueRequest(BaseModel):
+    subject: str = Field(min_length=1, max_length=128)
+    email: EmailStr
+    name: str = Field(default="", max_length=255)
+    next_path: str = Field(default="/papers/published", max_length=512)
+
+
+class DeerFlowSsoIssueResponse(BaseModel):
+    ticket: str
+    consume_url: str
+    expires_in: int
+    created_user: bool
+
+
 class DigestPaper(BaseModel):
     id: int
     canonical_key: str
@@ -65,6 +93,7 @@ class DigestPaper(BaseModel):
     interest_level: str
     interest_score: int
     interest_tag: str
+    authors: list[str]
     title_en: str
     title_zh: str
     summary_zh: str
@@ -91,6 +120,9 @@ class PaperLibraryGroup(BaseModel):
     publish_date: str
     paper_count: int
     items: list[DigestPaper]
+    page: int = 1
+    page_size: int = 50
+    has_more: bool = False
 
 
 class PaperLibraryOverview(BaseModel):
@@ -120,6 +152,7 @@ class FavoriteRead(BaseModel):
     category: str
     interest_level: str
     interest_tag: str
+    authors: list[str]
     title_en: str
     title_zh: str
     article_url: str
@@ -153,10 +186,35 @@ class PaperPushCreate(BaseModel):
     paper_id: int
     recipient_user_id: int
     note: str = ""
+    send_email_notification: bool = True
+
+
+class PaperPushBatchCreate(BaseModel):
+    paper_ids: list[int] = Field(min_length=1, max_length=100)
+    recipient_user_ids: list[int] = Field(min_length=1, max_length=20)
+    note: str = Field(default="", max_length=2000)
+    send_email_notification: bool = True
+
+
+class PaperPushBatchItemRead(BaseModel):
+    push_id: int
+    paper_id: int
+    recipient_user_id: int
+    email_notification_status: str
+
+
+class PaperPushBatchRead(BaseModel):
+    batch_id: str
+    paper_count: int
+    recipient_count: int
+    created_count: int
+    email_queued_count: int
+    items: list[PaperPushBatchItemRead]
 
 
 class PaperPushRead(BaseModel):
     id: int
+    batch_id: str = ""
     paper_id: int
     canonical_key: str
     recipient_user_id: int
@@ -165,6 +223,9 @@ class PaperPushRead(BaseModel):
     is_read: bool
     pushed_at: datetime
     read_at: Optional[datetime] = None
+    email_notification_status: str = "not_requested"
+    email_notification_error: str = ""
+    email_notification_sent_at: Optional[datetime] = None
     title_en: str
     title_zh: str
     journal: str

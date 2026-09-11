@@ -284,11 +284,101 @@ class LiteraturePushV2(Base):
     literature_item_key: Mapped[str] = mapped_column(String(512), index=True)
     recipient_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     sent_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    batch_id: Mapped[str] = mapped_column(String(36), default="", index=True)
     note: Mapped[str] = mapped_column(Text, default="")
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     pushed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     read_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    email_notification_status: Mapped[str] = mapped_column(String(32), default="not_requested", index=True)
+    email_notification_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    email_notification_error: Mapped[str] = mapped_column(Text, default="")
+    email_notification_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     literature_item: Mapped[Optional[ImportedLiteratureItem]] = relationship(back_populates="pushes_v2")
     recipient: Mapped[User] = relationship(back_populates="received_imported_pushes", foreign_keys=[recipient_user_id])
     sender: Mapped[User] = relationship(back_populates="sent_imported_pushes", foreign_keys=[sent_by_user_id])
+
+
+class ApiClient(Base):
+    __tablename__ = "api_clients"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    key_hash: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    scopes_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class ApiAuditEvent(Base):
+    __tablename__ = "api_audit_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(64), index=True)
+    client_id: Mapped[Optional[int]] = mapped_column(ForeignKey("api_clients.id", ondelete="SET NULL"), nullable=True, index=True)
+    action: Mapped[str] = mapped_column(String(128), index=True)
+    entity_type: Mapped[str] = mapped_column(String(64), default="", index=True)
+    entity_key: Mapped[str] = mapped_column(String(255), default="", index=True)
+    outcome: Mapped[str] = mapped_column(String(32), default="success", index=True)
+    detail_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ApiIdempotencyRecord(Base):
+    __tablename__ = "api_idempotency_records"
+    __table_args__ = (
+        UniqueConstraint("client_id", "idempotency_key", "method", "path", name="uq_api_idempotency"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("api_clients.id", ondelete="CASCADE"), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(255))
+    method: Mapped[str] = mapped_column(String(16))
+    path: Mapped[str] = mapped_column(String(255))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    response_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    status_code: Mapped[int] = mapped_column(Integer, default=201)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ApiReportTask(Base):
+    __tablename__ = "api_report_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    public_id: Mapped[str] = mapped_column(String(36), unique=True, index=True)
+    report_type: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    parameters_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    requested_by_client_id: Mapped[int] = mapped_column(ForeignKey("api_clients.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class ApiReportArtifact(Base):
+    __tablename__ = "api_report_artifacts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    public_id: Mapped[str] = mapped_column(String(36), unique=True, index=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("api_report_tasks.id", ondelete="CASCADE"), index=True)
+    format: Mapped[str] = mapped_column(String(32))
+    content: Mapped[str] = mapped_column(Text)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ApiRuleSuggestion(Base):
+    __tablename__ = "api_rule_suggestions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    public_id: Mapped[str] = mapped_column(String(36), unique=True, index=True)
+    baseline_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    proposed_content: Mapped[str] = mapped_column(Text)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    submitted_by_client_id: Mapped[int] = mapped_column(ForeignKey("api_clients.id", ondelete="CASCADE"), index=True)
+    reviewed_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    snapshot_path: Mapped[str] = mapped_column(String(1024), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

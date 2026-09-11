@@ -1,21 +1,24 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager
-from threading import Lock
+from contextlib import asynccontextmanager, suppress
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from .api import admin, auth, digests, exports, favorites, pushes
-from .config import get_settings
-from . import database
-from .migrations import run_runtime_migrations
+from .api.v1 import router as api_v1_router
+from .config import Settings, get_settings
 from .models import User
-from .integrations.producer_import.service import check_and_import_latest_runs, sync_users_from_producer_sources
-
-_PRODUCER_SYNC_LOCK = Lock()
+from .services.api_auth import bootstrap_api_client
+from .services.push_email_queue import process_push_email_jobs
+from .integrations.producer_import.runtime_sync import (
+    ensure_runtime_database_ready,
+    inside_sync_window as _inside_sync_window,
+    sync_from_producer,
+)
+from . import database
 
 
 def bootstrap_admin() -> None:
@@ -39,31 +42,56 @@ def bootstrap_admin() -> None:
         db.add(admin_user)
         db.commit()
 
-def sync_from_producer(*, trigger: str = "startup") -> None:
-    if not _PRODUCER_SYNC_LOCK.acquire(blocking=False):
-        return
-    try:
-        if database.SessionLocal is not None:
+
+async def periodic_push_email_delivery() -> None:
+    while True:
+        await asyncio.sleep(get_settings().push_email_worker_interval_seconds)
+        if database.SessionLocal is None:
+            continue
+        try:
             with database.SessionLocal() as db:
-                settings = get_settings()
-                if settings.producer_sync_enabled:
-                    sync_users_from_producer_sources(db)
-                    check_and_import_latest_runs(db, trigger=trigger)
-    finally:
-        _PRODUCER_SYNC_LOCK.release()
+                await asyncio.to_thread(process_push_email_jobs, db)
+        except Exception as exc:
+            print(f"[push-email] delivery failed: {exc}")
+
+
+async def periodic_producer_sync(settings: Settings) -> None:
+    while True:
+        await asyncio.sleep(settings.producer_sync_interval_seconds)
+        if not settings.producer_sync_enabled or not _inside_sync_window(settings):
+            continue
+        try:
+            await asyncio.to_thread(sync_from_producer, trigger="periodic")
+        except Exception as exc:
+            print(f"[producer-sync] periodic sync failed: {exc}")
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    database.configure_database()
-    run_runtime_migrations(database.engine)
-    database.Base.metadata.create_all(bind=database.engine)
-    await asyncio.to_thread(sync_from_producer, trigger="startup")
+    settings = get_settings()
+    ensure_runtime_database_ready()
+    if settings.producer_sync_enabled:
+        await asyncio.to_thread(sync_from_producer, trigger="startup")
     bootstrap_admin()
+    if database.SessionLocal is not None:
+        with database.SessionLocal() as db:
+            bootstrap_api_client(db)
+
+    sync_task: asyncio.Task[None] | None = None
+    email_task = asyncio.create_task(periodic_push_email_delivery()) if settings.push_email_worker_enabled else None
+    if settings.producer_sync_enabled and settings.producer_sync_interval_seconds > 0:
+        sync_task = asyncio.create_task(periodic_producer_sync(settings))
     try:
         yield
     finally:
-        return
+        if email_task is not None:
+            email_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await email_task
+        if sync_task is not None:
+            sync_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await sync_task
 
 
 def create_app() -> FastAPI:
@@ -82,6 +110,18 @@ def create_app() -> FastAPI:
     app.include_router(favorites.router, prefix=settings.api_prefix)
     app.include_router(pushes.router, prefix=settings.api_prefix)
     app.include_router(exports.router, prefix=settings.api_prefix)
+    app.include_router(api_v1_router, prefix=settings.api_prefix)
+
+    @app.middleware("http")
+    async def api_v1_headers(request: Request, call_next):
+        if request.url.path.startswith(f"{settings.api_prefix}/v1"):
+            from .services.api_support import request_id
+            request_id(request)
+        response = await call_next(request)
+        if request.url.path.startswith(f"{settings.api_prefix}/v1"):
+            response.headers["X-API-Version"] = "v1"
+            response.headers["X-Request-ID"] = request.state.request_id
+        return response
 
     @app.get("/healthz")
     def healthcheck() -> dict[str, str]:

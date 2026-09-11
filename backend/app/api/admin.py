@@ -6,9 +6,25 @@ from sqlalchemy.orm import Session
 
 from ..deps import get_db, require_admin
 from ..integrations.producer_import.service import ImportStatusError, check_and_import_latest_runs, import_run_by_id, list_run_statuses
-from ..models import ImportedLiteratureItem, LiteraturePushV2, User
-from ..schemas import ImportResult, ImportRunRead, PaperPushCreate, PaperPushRead, UserCreate, UserRead, UserUpdate
+from ..integrations.producer_import.user_sync import sync_users_from_producer_config
+from ..models import User
+from ..schemas import (
+    ImportResult,
+    ImportRunRead,
+    PaperPushBatchCreate,
+    PaperPushBatchItemRead,
+    PaperPushBatchRead,
+    PaperPushCreate,
+    PaperPushRead,
+    SubscriptionEmailCreate,
+    SubscriptionEmailRead,
+    UserCreate,
+    UserRead,
+    UserUpdate,
+)
 from ..services.audit import record_action
+from ..services.pushes import PushRequestError, create_push_batch
+from ..services.subscription_users import SubscriptionEmailExistsError, add_subscription_email
 from ..services.user_visibility import require_visible_target_user, visible_user_statement
 from ..services.user_sync import derive_display_name
 
@@ -79,6 +95,40 @@ def update_user(user_id: int, payload: UserUpdate, current_user: User = Depends(
     return user
 
 
+@router.post("/subscriptions", response_model=SubscriptionEmailRead, status_code=status.HTTP_201_CREATED)
+def create_subscription_email(
+    payload: SubscriptionEmailCreate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> SubscriptionEmailRead:
+    _ = current_user
+    if payload.user_group not in {"internal", "outsider"}:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid user group")
+    from ..config import PROJECT_ROOT
+    from instance_paths import get_instance_paths
+
+    config_path = get_instance_paths(PROJECT_ROOT).producer_users_config
+    try:
+        result = add_subscription_email(
+            config_path,
+            email=str(payload.email),
+            name=payload.name,
+            user_group=payload.user_group,
+        )
+    except SubscriptionEmailExistsError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+    sync_users_from_producer_config(db, config_path=config_path)
+    return SubscriptionEmailRead(
+        uid=result.uid,
+        email=result.email,
+        name=result.name,
+        user_group=result.user_group,
+        smtp_profile=result.smtp_profile,
+    )
+
+
 @router.get("/imports/runs", response_model=list[ImportRunRead])
 def list_import_runs(current_user: User = Depends(require_admin), db: Session = Depends(get_db)) -> list[ImportRunRead]:
     _ = current_user
@@ -120,38 +170,67 @@ def reimport_producer_run(
     return ImportResult(**result.__dict__)
 
 
+@router.post("/pushes/batch", response_model=PaperPushBatchRead, status_code=status.HTTP_201_CREATED)
+def push_papers_to_users(
+    payload: PaperPushBatchCreate,
+    admin_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> PaperPushBatchRead:
+    try:
+        batch = create_push_batch(
+            db,
+            admin_user=admin_user,
+            paper_ids=payload.paper_ids,
+            recipient_user_ids=payload.recipient_user_ids,
+            note=payload.note,
+            send_email_notification=payload.send_email_notification,
+        )
+    except PushRequestError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return PaperPushBatchRead(
+        batch_id=batch.batch_id,
+        paper_count=len(batch.paper_ids),
+        recipient_count=len(batch.recipient_user_ids),
+        created_count=len(batch.pushes),
+        email_queued_count=(
+            len(batch.recipient_user_ids) if payload.send_email_notification else 0
+        ),
+        items=[
+            PaperPushBatchItemRead(
+                push_id=push.id,
+                paper_id=push.literature_item_id or 0,
+                recipient_user_id=push.recipient_user_id,
+                email_notification_status=push.email_notification_status,
+            )
+            for push in batch.pushes
+        ],
+    )
+
+
 @router.post("/pushes", response_model=PaperPushRead, status_code=status.HTTP_201_CREATED)
 def push_paper_to_user(
     payload: PaperPushCreate,
     admin_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> PaperPushRead:
-    recipient = require_visible_target_user(db, admin_user, payload.recipient_user_id)
-    paper = db.get(ImportedLiteratureItem, payload.paper_id)
-    if paper is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found")
-    push = LiteraturePushV2(
-        literature_item_id=paper.id,
-        literature_item_key=paper.literature_item_key,
-        recipient_user_id=recipient.id,
-        sent_by_user_id=admin_user.id,
-        note=payload.note.strip(),
-    )
-    db.add(push)
-    db.flush()
-    record_action(
-        db,
-        action_type="admin_push_paper",
-        actor_user_id=admin_user.id,
-        target_user_id=recipient.id,
-        entity_type="paper",
-        entity_id=paper.id,
-        detail={"note": payload.note.strip(), "canonical_key": paper.literature_item_key},
-    )
-    db.commit()
-    db.refresh(push)
+    try:
+        batch = create_push_batch(
+            db,
+            admin_user=admin_user,
+            paper_ids=[payload.paper_id],
+            recipient_user_ids=[payload.recipient_user_id],
+            note=payload.note,
+            send_email_notification=payload.send_email_notification,
+            batch_id="",
+        )
+    except PushRequestError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    push = batch.pushes[0]
+    paper = batch.papers[0]
+    recipient = batch.recipients[0]
     return PaperPushRead(
         id=push.id,
+        batch_id=push.batch_id,
         paper_id=paper.id,
         canonical_key=paper.literature_item_key,
         recipient_user_id=recipient.id,
@@ -160,6 +239,9 @@ def push_paper_to_user(
         is_read=push.is_read,
         pushed_at=push.pushed_at,
         read_at=push.read_at,
+        email_notification_status=push.email_notification_status,
+        email_notification_error=push.email_notification_error,
+        email_notification_sent_at=push.email_notification_sent_at,
         title_en=paper.title_en,
         title_zh=paper.title_zh,
         journal=paper.journal,

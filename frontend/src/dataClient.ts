@@ -18,6 +18,7 @@ export type PaperItem = {
   interest_level: string;
   interest_score: number;
   interest_tag: string;
+  authors: string[];
   title_en: string;
   title_zh: string;
   summary_zh: string;
@@ -46,6 +47,9 @@ export type PaperLibraryGroup = {
   publish_date: string;
   paper_count: number;
   items: PaperItem[];
+  page: number;
+  page_size: number;
+  has_more: boolean;
 };
 
 export type PaperLibraryOverview = {
@@ -70,6 +74,7 @@ export type FavoriteItem = {
   category: string;
   interest_level: string;
   interest_tag: string;
+  authors: string[];
   title_en: string;
   title_zh: string;
   article_url: string;
@@ -118,25 +123,6 @@ export type ExportJob = {
   created_at: string;
   finished_at?: string | null;
   download_url: string;
-};
-
-export type PaperPushItem = {
-  id: number;
-  paper_id: number;
-  canonical_key: string;
-  recipient_user_id: number;
-  sent_by_user_id: number;
-  note: string;
-  is_read: boolean;
-  pushed_at: string;
-  read_at?: string | null;
-  title_en: string;
-  title_zh: string;
-  journal: string;
-  publish_date: string;
-  article_url: string;
-  sender_name: string;
-  recipient_name: string;
 };
 
 export type ImportRun = {
@@ -288,6 +274,8 @@ export async function fetchPaperLibraryGroup(
     category?: string;
     tag?: string;
     sort?: DigestSortKey;
+    page?: number;
+    page_size?: number;
   },
 ) {
   const query = buildQueryString({
@@ -295,6 +283,8 @@ export async function fetchPaperLibraryGroup(
     category: params.category || "",
     tag: params.tag || "",
     sort: params.sort || "publish_date_desc",
+    page: params.page ? String(params.page) : "",
+    page_size: params.page_size ? String(params.page_size) : "",
   });
   return request<PaperLibraryGroup>(`/api/papers/library/groups/${encodeURIComponent(publishDate)}${query}`);
 }
@@ -323,25 +313,6 @@ export async function saveFavoriteReview(paperId: number, draft: FavoriteReviewD
   return request<FavoriteItem>(`/api/favorites/${paperId}${query}`, {
     method: "PATCH",
     body: JSON.stringify(draft),
-  });
-}
-
-export async function listPushes(targetUserId?: string) {
-  const suffix = targetUserId ? `?user_id=${targetUserId}` : "";
-  return request<PaperPushItem[]>(`/api/pushes${suffix}`);
-}
-
-export async function updatePush(pushId: number, isRead: boolean) {
-  return request<PaperPushItem>(`/api/pushes/${pushId}`, {
-    method: "PATCH",
-    body: JSON.stringify({ is_read: isRead }),
-  });
-}
-
-export async function createPush(payload: { paper_id: number; recipient_user_id: number; note: string }) {
-  return request<PaperPushItem>("/api/admin/pushes", {
-    method: "POST",
-    body: JSON.stringify(payload),
   });
 }
 

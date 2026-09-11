@@ -57,6 +57,7 @@ This script:
 - starts FastAPI on `${BACKEND_HOST}:${BACKEND_PORT}`
 - starts the Vite dev server on `${FRONTEND_HOST}:${FRONTEND_PORT}`
 - runs one startup producer import check
+- starts the producer sync daemon, which polls producer SQLite every minute during the configured window
 - starts Cloudflare Tunnel when `ENABLE_TUNNEL=true`
 - writes pid files and logs under `bio-literature-config/runtime/web/`
 
@@ -92,11 +93,17 @@ Optional `launchd` template:
 The supported import controls are:
 
 - startup import check
+- producer sync daemon periodic import check
 - admin import check
 - admin import one run
 - admin force re-import one run
 
-There is no supported periodic polling window.
+The supported periodic polling window is configured through `deploy.env.local`:
+
+- `ENABLE_PRODUCER_SYNC_DAEMON`
+- `PRODUCER_SYNC_INTERVAL_SECONDS`
+- `PRODUCER_SYNC_WINDOW_START`
+- `PRODUCER_SYNC_WINDOW_END`
 
 ## 6. Review Export
 

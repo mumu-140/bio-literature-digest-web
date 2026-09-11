@@ -25,9 +25,10 @@
 
 1. producer 完成一次运行并写入 producer SQLite
 2. web 在启动时检查最新可用运行并导入本地数据库
-3. 管理员也可以手动检查、导入、重导入
-4. archives / 导出产物只用于校验或兜底，不阻塞基于 SQLite 的导入
-5. 前端读取的始终是 web 本地数据库，不直接读 producer DB
+3. producer sync 守护进程会在配置的时间窗口内定时检查并导入新运行
+4. 管理员也可以手动检查、导入、重导入
+5. archives / 导出产物只用于校验或兜底，不阻塞基于 SQLite 的导入
+6. 前端读取的始终是 web 本地数据库，不直接读 producer DB
 
 ## 快速开始
 
@@ -56,7 +57,7 @@ npm run dev -- --host 127.0.0.1 --port 18001
 ./stop.sh
 ```
 
-`start.sh` 会读取 `bio-literature-config/env/web/deploy.env.local`，拉起后端、前端 dev server，以及可选的 Cloudflare Tunnel。
+`start.sh` 会读取 `bio-literature-config/env/web/deploy.env.local`，拉起后端、前端 dev server、producer sync 守护进程，以及可选的 Cloudflare Tunnel。
 
 ## 与 producer 的边界
 

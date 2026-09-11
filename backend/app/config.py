@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     session_cookie_name: str = "bio_digest_session"
     session_cookie_secure: bool = False
     session_ttl_hours: int = 24 * 14
+    deerflow_sso_ticket_ttl_seconds: int = Field(default=120, ge=30, le=600)
     session_secret: str = "change-me"
     cst_timezone: str = "Asia/Shanghai"
     web_base_url: str = "http://127.0.0.1:18001"
@@ -37,12 +38,20 @@ class Settings(BaseSettings):
     export_inline_limit: int = Field(default=5000)
     data_retention_days: int = Field(default=30, ge=1)
     producer_sync_enabled: bool = True
+    producer_sync_interval_seconds: int = Field(default=60, ge=0)
+    producer_sync_window_start: str = "08:00"
+    producer_sync_window_end: str = "09:00"
     database_url: str = "sqlite:///./bio_digest_web.db"
     access_trace_dir: str = "access-traces"
     review_export_dir: str = "review-tables"
     producer_root: str = ""
     producer_rules_path: str = ""
     producer_review_template_path: str = ""
+    literature_api_bootstrap_token: str = ""
+    literature_api_client_name: str = "deerflow"
+    literature_api_scopes: str = "literature:read,reports:write,rules:read,rules:suggest,audit:read"
+    push_email_worker_enabled: bool = True
+    push_email_worker_interval_seconds: int = Field(default=10, ge=1)
 
 
 def _resolve_path(raw_value: str, *, base_dir: Path) -> str:
@@ -62,6 +71,15 @@ def _resolve_existing_path(raw_value: str, *, base_dir: Path, fallbacks: list[st
             return str(resolved)
     primary = raw_value or (fallbacks[0] if fallbacks else "")
     return _resolve_path(primary, base_dir=base_dir)
+
+
+def parse_clock_hhmm(raw_value: str) -> tuple[int, int]:
+    hour_text, minute_text = str(raw_value).strip().split(":", 1)
+    hour = int(hour_text)
+    minute = int(minute_text)
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        raise ValueError(f"Invalid HH:MM value: {raw_value}")
+    return hour, minute
 
 
 @lru_cache(maxsize=1)
