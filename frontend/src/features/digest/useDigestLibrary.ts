@@ -14,7 +14,9 @@ import {
   restoreDigestPageCache,
   restoreDigestPageState,
 } from "./browserState";
+import { digestCache, useDigestPrefetch } from "./cache";
 import {
+  DIGEST_INITIAL_GROUP_COUNT,
   DIGEST_TOAST_DURATION_MS,
 } from "./config";
 import {
@@ -58,6 +60,30 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
   const canRestoreDigestSnapshot = Boolean(storedDigestState && arePaperFiltersEqual(storedDigestState.filters, initialFilters));
   const storedDigestCache = canRestoreDigestSnapshot ? restoreDigestPageCache() : null;
   const initialLoadedGroups = storedDigestCache?.loadedGroups || storedDigestCache?.overview?.loaded_groups || [];
+
+  // Seed cache from restored session snapshot if available
+  if (storedDigestCache?.overview) {
+    digestCache.setCachedOverview(
+      {
+        q: initialFilters.query,
+        publish_date: initialFilters.publishDate,
+        category: initialFilters.category,
+        tag: initialFilters.tag,
+        sort: initialFilters.sort,
+        initial_group_count: DIGEST_INITIAL_GROUP_COUNT,
+      },
+      storedDigestCache.overview,
+    );
+    if (initialLoadedGroups.length) {
+      digestCache.seedGroupsFromOverview(initialLoadedGroups, {
+        q: initialFilters.query,
+        category: initialFilters.category,
+        tag: initialFilters.tag,
+        sort: initialFilters.sort,
+      });
+    }
+  }
+
   const [overview, setOverview] = useState<PaperLibraryOverview | null>(storedDigestCache?.overview ?? null);
   const [loadedGroups, setLoadedGroups] = useState<Record<string, PaperLibraryGroup>>(() => buildLoadedGroupMap(initialLoadedGroups));
   const [filters, setFilters] = useState<PaperFilters>(initialFilters);
@@ -78,7 +104,7 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
   const deferredQuery = useDeferredValue(filters.query.trim());
   const lastLoadedSignatureRef = useRef(storedDigestCache?.overview ? getPaperFiltersSignature(initialFilters) : "");
   const restoreScrollYRef = useRef(canRestoreDigestSnapshot ? storedDigestState?.scrollY || 0 : 0);
-  const shouldRestoreScrollRef = useRef(Boolean(canRestoreDigestSnapshot && storedDigestCache?.overview));
+  const shouldRestoreScrollRef = useRef(canRestoreDigestSnapshot && Boolean(storedDigestState?.scrollY));
 
   const appliedFilters: PaperFilters = {
     ...filters,
@@ -133,6 +159,14 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
   });
   useToastTimeout(favoriteToast, setFavoriteToast, DIGEST_TOAST_DURATION_MS);
 
+  // Background adjacent date prefetcher
+  useDigestPrefetch({
+    activeRailDate,
+    groupSummaries,
+    appliedFilters,
+    loadedGroups,
+  });
+
   async function toggleFavorite(item: PaperItem) {
     if (pendingFavoriteIdSet.has(item.id)) {
       return;
@@ -141,6 +175,7 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
     try {
       await toggleFavoriteRequest(item.id, item.is_favorited);
       setLoadedGroups((current) => updateFavoriteStateInGroups(current, item.id, !item.is_favorited));
+      digestCache.updatePaperFavoriteState(item.id, !item.is_favorited);
       setFavoriteToast({
         kind: "success",
         message: item.is_favorited ? "已取消收藏" : "已加入收藏",
@@ -218,9 +253,25 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
     if (loadedGroups[publishDate]) {
       return;
     }
+
+    // 1. Instant cache check: 0ms hit
+    const cached = digestCache.getCachedGroup({
+      publishDate,
+      q: appliedFilters.query,
+      category: appliedFilters.category,
+      tag: appliedFilters.tag,
+      sort: appliedFilters.sort,
+    });
+    if (cached) {
+      setLoadedGroups((current) => ({ ...current, [publishDate]: cached }));
+      return;
+    }
+
+    // 2. Fetch with in-flight deduplication
     setLoadingGroupDates((current) => (current.includes(publishDate) ? current : [...current, publishDate]));
     try {
-      const group = await fetchPaperLibraryGroup(publishDate, {
+      const group = await digestCache.loadGroup({
+        publishDate,
         q: appliedFilters.query,
         category: appliedFilters.category,
         tag: appliedFilters.tag,
@@ -247,13 +298,26 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
         page: currentGroup.page + 1,
         page_size: currentGroup.page_size,
       });
+      const mergedGroup: PaperLibraryGroup = {
+        ...nextGroup,
+        items: [...(currentGroup.items || []), ...nextGroup.items],
+      };
       setLoadedGroups((current) => ({
         ...current,
-        [publishDate]: {
-          ...nextGroup,
-          items: [...(current[publishDate]?.items || []), ...nextGroup.items],
-        },
+        [publishDate]: mergedGroup,
       }));
+      digestCache.setCachedGroup(
+        {
+          publishDate,
+          q: appliedFilters.query,
+          category: appliedFilters.category,
+          tag: appliedFilters.tag,
+          sort: appliedFilters.sort,
+          page: 1,
+          page_size: mergedGroup.items.length,
+        },
+        mergedGroup,
+      );
     } finally {
       setLoadingGroupDates((current) => current.filter((value) => value !== publishDate));
     }
@@ -316,7 +380,10 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
     pendingFavoriteIdSet,
     favoriteToast,
     setFavoriteToast,
-    refreshOverview: () => setRequestVersion((current) => current + 1),
+    refreshOverview: () => {
+      digestCache.clear();
+      setRequestVersion((current) => current + 1);
+    },
     clearFilters,
     togglePaperBatch,
     clearSelection,

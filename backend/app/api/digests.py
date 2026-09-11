@@ -4,7 +4,7 @@ from datetime import date as date_type, datetime
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -130,6 +130,7 @@ def list_papers(
 
 @router.get("/papers/library", response_model=PaperLibraryOverview)
 def get_paper_library_overview(
+    response: Response,
     q: Optional[str] = None,
     category: Optional[str] = None,
     tag: Optional[str] = None,
@@ -139,6 +140,7 @@ def get_paper_library_overview(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PaperLibraryOverview:
+    response.headers["Cache-Control"] = "private, max-age=120, stale-while-revalidate=600"
     return build_paper_library_overview(
         db,
         current_user.id,
@@ -156,6 +158,7 @@ def get_paper_library_overview(
 @router.get("/papers/library/groups/{publish_date}", response_model=PaperLibraryGroup)
 def get_paper_library_group(
     publish_date: str,
+    response: Response,
     q: Optional[str] = None,
     category: Optional[str] = None,
     tag: Optional[str] = None,
@@ -165,6 +168,7 @@ def get_paper_library_group(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PaperLibraryGroup:
+    response.headers["Cache-Control"] = "private, max-age=300, stale-while-revalidate=1800"
     return load_paper_library_group(
         db,
         current_user.id,

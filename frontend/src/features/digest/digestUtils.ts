@@ -70,7 +70,7 @@ export function sanitizeExpandedPublishDates(
   orderedGroups: Array<{ publish_date: string }>,
 ) {
   const validDates = new Set(orderedGroups.map((group) => group.publish_date));
-  const sanitized = expandedPublishDates.filter((publishDate) => validDates.has(publishDate)).slice(-1);
+  const sanitized = expandedPublishDates.filter((publishDate) => validDates.has(publishDate));
   if (sanitized.length) {
     return sanitized;
   }
@@ -82,7 +82,15 @@ export function ensurePublishDateExpanded(
   publishDate: string,
   orderedGroups: Array<{ publish_date: string }>,
 ) {
-  return sanitizeExpandedPublishDates([publishDate], orderedGroups);
+  const validDates = new Set(orderedGroups.map((group) => group.publish_date));
+  if (!validDates.has(publishDate)) {
+    return sanitizeExpandedPublishDates(expandedPublishDates, orderedGroups);
+  }
+  const currentValid = expandedPublishDates.filter((d) => validDates.has(d));
+  if (currentValid.includes(publishDate)) {
+    return currentValid;
+  }
+  return [...currentValid, publishDate];
 }
 
 export function pickActiveRailDate(current: string, requestedPublishDate: string, orderedGroups: Array<{ publish_date: string }>) {

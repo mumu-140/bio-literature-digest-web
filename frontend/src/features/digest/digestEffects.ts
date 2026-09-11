@@ -3,12 +3,12 @@ import {
   PaperItem,
   PaperLibraryGroup,
   PaperLibraryOverview,
-  fetchPaperLibraryOverview,
 } from "../../dataClient";
 import {
   persistDigestPageCache,
   persistDigestPageState,
 } from "./browserState";
+import { digestCache } from "./cache";
 import { DIGEST_INITIAL_GROUP_COUNT } from "./config";
 import {
   PaperFilters,
@@ -72,8 +72,42 @@ type OverviewLoaderOptions = {
 
 async function loadOverview(options: OverviewLoaderOptions, isIgnored: () => boolean) {
   const { appliedFilters } = options;
+
+  // 1. Instant cache check: if cached, render immediately with 0ms delay!
+  const cached = digestCache.getCachedOverview({
+    q: appliedFilters.query,
+    publish_date: appliedFilters.publishDate,
+    category: appliedFilters.category,
+    tag: appliedFilters.tag,
+    sort: appliedFilters.sort,
+    initial_group_count: DIGEST_INITIAL_GROUP_COUNT,
+  });
+
+  if (cached) {
+    if (isIgnored()) return;
+    options.setOverview(cached);
+    options.setLoadedGroups(buildLoadedGroupMap(cached.loaded_groups));
+    options.setExpandedPublishDates((current) =>
+      sanitizeExpandedPublishDates(
+        appliedFilters.publishDate
+          ? [appliedFilters.publishDate]
+          : current.length
+            ? current
+            : cached.loaded_groups.map((group) => group.publish_date),
+        cached.groups,
+      ),
+    );
+    options.setActiveRailDate((current) => pickActiveRailDate(current, appliedFilters.publishDate, cached.groups));
+    options.lastLoadedSignatureRef.current = options.filterSignature;
+    options.shouldRestoreScrollRef.current = true;
+    options.setLoadingOverview(false);
+    options.setRefreshingOverview(false);
+    return;
+  }
+
+  // 2. Cold load from network (or in-flight deduplicated promise)
   try {
-    const response = await fetchPaperLibraryOverview({
+    const response = await digestCache.loadOverview({
       q: appliedFilters.query,
       publish_date: appliedFilters.publishDate,
       category: appliedFilters.category,
@@ -114,7 +148,22 @@ export function useOverviewLoader(options: OverviewLoaderOptions) {
     if (options.lastLoadedSignatureRef.current !== filterSignature) {
       options.restoreScrollYRef.current = 0;
     }
-    options.overview ? options.setRefreshingOverview(true) : options.setLoadingOverview(true);
+
+    const hasCache = Boolean(
+      digestCache.getCachedOverview({
+        q: appliedFilters.query,
+        publish_date: appliedFilters.publishDate,
+        category: appliedFilters.category,
+        tag: appliedFilters.tag,
+        sort: appliedFilters.sort,
+        initial_group_count: DIGEST_INITIAL_GROUP_COUNT,
+      }),
+    );
+
+    if (!hasCache) {
+      options.overview ? options.setRefreshingOverview(true) : options.setLoadingOverview(true);
+    }
+
     void loadOverview(options, () => ignore);
     return () => {
       ignore = true;
