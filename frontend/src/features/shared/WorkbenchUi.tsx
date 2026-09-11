@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { fetchAdminUsers, UserItem } from "../../dataClient";
 import { PaperPushItem } from "../pushes/pushClient";
+import { IconArrowUp, IconCheck, IconCopy, IconExternalLink, IconSparkles } from "./Icons";
 
 export function useAdminUsers(enabled: boolean) {
   const [users, setUsers] = useState<UserItem[]>([]);
@@ -19,25 +20,47 @@ export function useAdminUsers(enabled: boolean) {
 }
 
 export function InterestBadge({ level }: { level: string }) {
-  const normalized = level.trim();
+  const normalized = (level || "").trim();
   let tier = "is-low";
-  if (normalized === "非常感兴趣") tier = "is-high";
-  else if (normalized === "感兴趣") tier = "is-mid";
-  else if (normalized === "一般") tier = "is-low";
-  else if (normalized === "非常一般") tier = "is-vlow";
+  let showSparkle = false;
+
+  if (normalized === "非常感兴趣") {
+    tier = "is-high";
+    showSparkle = true;
+  } else if (normalized === "感兴趣") {
+    tier = "is-mid";
+  } else if (normalized === "一般") {
+    tier = "is-low";
+  } else if (normalized === "非常一般") {
+    tier = "is-vlow";
+  }
+
   return (
-    <span className={`interest-badge ${tier}`}>
-      <span className="interest-badge-dot" />
-      {normalized || "未分级"}
+    <span className={`interest-badge ${tier}`} title={`兴趣评级：${normalized || "未分级"}`}>
+      {showSparkle ? (
+        <IconSparkles size={11} className="interest-badge-icon" />
+      ) : (
+        <span className="interest-badge-dot" />
+      )}
+      <span>{normalized || "未分级"}</span>
     </span>
   );
 }
 
-export function MetricTile({ label, value }: { label: string; value: string }) {
+export function MetricTile({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
   return (
     <div className="metric-tile">
-      <span>{label}</span>
-      <strong>{value}</strong>
+      <span className="metric-label">{label}</span>
+      <strong className="metric-val">{value}</strong>
+      {hint ? <small className="metric-hint">{hint}</small> : null}
     </div>
   );
 }
@@ -46,16 +69,139 @@ export function EmptyState({
   title,
   description,
   compact = false,
+  action,
 }: {
   title: string;
   description: string;
   compact?: boolean;
+  action?: React.ReactNode;
 }) {
   return (
     <div className={`empty-state${compact ? " is-compact" : ""}`}>
+      <div className="empty-state-icon-wrap" aria-hidden="true">
+        <span className="empty-state-glyph">📑</span>
+      </div>
       <strong>{title}</strong>
       <p>{description}</p>
+      {action ? <div className="empty-state-action">{action}</div> : null}
     </div>
+  );
+}
+
+export function AuthorList({
+  authors,
+  maxVisible = 3,
+}: {
+  authors?: string[];
+  maxVisible?: number;
+}) {
+  if (!authors || !authors.length) {
+    return null;
+  }
+  const cleanAuthors = authors.map((a) => a.trim()).filter(Boolean);
+  if (!cleanAuthors.length) {
+    return null;
+  }
+  const fullText = cleanAuthors.join(", ");
+  const visible = cleanAuthors.slice(0, maxVisible);
+  const hasMore = cleanAuthors.length > maxVisible;
+
+  return (
+    <span className="paper-authors" title={fullText}>
+      {visible.join(", ")}
+      {hasMore ? <span className="authors-et-al"> 等 {cleanAuthors.length} 位作者</span> : null}
+    </span>
+  );
+}
+
+export function CopyDoiButton({ doi }: { doi: string }) {
+  const [copied, setCopied] = useState(false);
+  const normalized = normalizeDoi(doi);
+  if (!normalized) return null;
+
+  async function handleCopy(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(normalized);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = normalized;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // ignore
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className={`doi-copy-btn${copied ? " is-copied" : ""}`}
+      onClick={handleCopy}
+      title={copied ? "DOI 已复制到剪贴板！" : `复制 DOI：${normalized}`}
+      aria-label="复制 DOI"
+    >
+      {copied ? <IconCheck size={12} /> : <IconCopy size={12} />}
+      <span className="doi-copy-text">{copied ? "已复制" : "复制"}</span>
+    </button>
+  );
+}
+
+export function DoiField({ doi }: { doi: string }) {
+  const normalized = normalizeDoi(doi);
+  if (!normalized) {
+    return <span className="muted">[无 DOI]</span>;
+  }
+  return (
+    <span className="doi-field">
+      <a
+        className="doi-link"
+        href={buildDoiUrl(normalized)}
+        target="_blank"
+        rel="noreferrer"
+        title="跳转至 DOI 原文"
+      >
+        <span>{normalized}</span>
+        <IconExternalLink size={10} className="doi-link-icon" />
+      </a>
+      <CopyDoiButton doi={normalized} />
+    </span>
+  );
+}
+
+export function BackToTopButton() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    function onScroll() {
+      setVisible(window.scrollY > 400);
+    }
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  if (!visible) return null;
+
+  return (
+    <button
+      type="button"
+      className="back-to-top-btn"
+      onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+      title="回到顶部"
+      aria-label="回到顶部"
+    >
+      <IconArrowUp size={18} />
+      <span className="back-to-top-label">顶部</span>
+    </button>
   );
 }
 
@@ -82,7 +228,6 @@ export function UserSelect({
   );
 }
 
-
 export function UserMultiSelect({
   users,
   values,
@@ -103,7 +248,9 @@ export function UserMultiSelect({
 
   return (
     <details className="multi-user-select">
-      <summary aria-label={"接收人：" + summary}>{summary}</summary>
+      <summary aria-label={"接收人：" + summary}>
+        <span>{summary}</span>
+      </summary>
       <MultiUserOptions
         users={activeUsers}
         values={selectedValues}
@@ -170,7 +317,6 @@ function MultiUserOptions({
     </div>
   );
 }
-
 
 export function formatReviewDecision(value: string) {
   return {
