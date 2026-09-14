@@ -386,6 +386,14 @@ function DesktopPaperRow({
             <CopyDoiButton doi={normalizedDoi} />
           </div>
         ) : null}
+
+        {displayTags.length ? (
+          <div className="paper-tags-inline table-tags-inline">
+            {displayTags.map((tag) => (
+              <span key={String(paper.id) + "-inline-" + tag}>{tag}</span>
+            ))}
+          </div>
+        ) : null}
       </td>
       <td className="zh-col">
         {paper.title_zh ? (
