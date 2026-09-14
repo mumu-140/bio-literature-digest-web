@@ -245,7 +245,7 @@ function DesktopPaperTable(
     props.papers.every((paper) => props.selectedKeys.has(getPaperSelectionKey(paper)));
 
   return (
-    <div className="desktop-only">
+    <div className="desktop-only paper-table-shell">
       <table className="paper-table">
         <thead>
           <tr>

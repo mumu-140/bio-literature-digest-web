@@ -448,8 +448,13 @@ table {
   border-collapse: collapse;
 }
 
+.paper-table-shell {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .paper-table {
-  min-width: 0;
+  min-width: 820px;
   table-layout: fixed;
 }
 
@@ -1209,9 +1214,12 @@ tbody tr:hover {
   display: block;
 }
 
-.paper-table th:first-child,
-.paper-table td:first-child {
-  width: 56px;
+.paper-table th.select-col,
+.paper-table td.select-col {
+  width: 44px;
+  text-align: center;
+  padding-left: 8px;
+  padding-right: 4px;
 }
 
 .paper-table .action-col {
@@ -1224,23 +1232,31 @@ tbody tr:hover {
 }
 
 .paper-table .score-col {
-  width: 9%;
+  width: 118px;
+  min-width: 118px;
   white-space: nowrap;
   font-weight: 650;
+  padding-left: 6px;
+  padding-right: 6px;
+  box-sizing: border-box;
+}
+
+.paper-table td.score-col {
+  overflow: hidden;
 }
 
 .paper-table .title-col {
-  width: 34%;
+  width: 38%;
   word-break: break-word;
 }
 
 .paper-table .zh-col {
-  width: 24%;
+  width: 28%;
   word-break: break-word;
 }
 
 .paper-table .tags-col {
-  width: 17%;
+  width: 18%;
   word-break: break-word;
 }
 
@@ -1372,6 +1388,8 @@ tbody tr:hover {
 .paper-table .score-col .interest-badge {
   font-size: 11px;
   padding: 2px 8px;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .paper-table td.title-col {
