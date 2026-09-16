@@ -63,6 +63,8 @@ def _group_id_statement(db: Session, filters, apply_text_filter: Callable):
     )
     if filters.category:
         statement = statement.where(ImportedLiteratureItem.category == filters.category)
+    if filters.journal:
+        statement = statement.where(ImportedLiteratureItem.journal == filters.journal)
     if filters.query:
         statement = apply_text_filter(db, statement, filters.query)
     if filters.publish_date == UNKNOWN_PUBLISH_DATE:

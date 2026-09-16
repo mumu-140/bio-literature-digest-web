@@ -68,6 +68,7 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
         q: initialFilters.query,
         publish_date: initialFilters.publishDate,
         category: initialFilters.category,
+        journal: initialFilters.journal,
         tag: initialFilters.tag,
         sort: initialFilters.sort,
         initial_group_count: DIGEST_INITIAL_GROUP_COUNT,
@@ -78,6 +79,7 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
       digestCache.seedGroupsFromOverview(initialLoadedGroups, {
         q: initialFilters.query,
         category: initialFilters.category,
+        journal: initialFilters.journal,
         tag: initialFilters.tag,
         sort: initialFilters.sort,
       });
@@ -114,6 +116,7 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
   const groupSummaries = overview?.groups || [];
   const publishDateOptions = overview?.available_publish_dates || [];
   const categoryOptions = overview?.available_categories || [];
+  const journalOptions = overview?.available_journals || [];
   const tagOptions = overview?.available_tags || [];
   const loadedPapers = collectLoadedPapers(loadedGroups, groupSummaries);
   const digestPush = useDigestPush({ user, loadedPapers, selectedKeys });
@@ -259,6 +262,7 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
       publishDate,
       q: appliedFilters.query,
       category: appliedFilters.category,
+      journal: appliedFilters.journal,
       tag: appliedFilters.tag,
       sort: appliedFilters.sort,
     });
@@ -274,6 +278,7 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
         publishDate,
         q: appliedFilters.query,
         category: appliedFilters.category,
+        journal: appliedFilters.journal,
         tag: appliedFilters.tag,
         sort: appliedFilters.sort,
       });
@@ -293,6 +298,7 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
       const nextGroup = await fetchPaperLibraryGroup(publishDate, {
         q: appliedFilters.query,
         category: appliedFilters.category,
+        journal: appliedFilters.journal,
         tag: appliedFilters.tag,
         sort: appliedFilters.sort,
         page: currentGroup.page + 1,
@@ -311,6 +317,7 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
           publishDate,
           q: appliedFilters.query,
           category: appliedFilters.category,
+          journal: appliedFilters.journal,
           tag: appliedFilters.tag,
           sort: appliedFilters.sort,
           page: 1,
@@ -348,6 +355,7 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
       query: "",
       publishDate: "",
       category: "",
+      journal: "",
       tag: "",
       sort: current.sort,
     }));
@@ -363,6 +371,7 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
     setFilters,
     publishDateOptions,
     categoryOptions,
+    journalOptions,
     tagOptions,
     overview,
     selectedKeys,

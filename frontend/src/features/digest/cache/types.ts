@@ -15,6 +15,7 @@ export type GroupCacheParams = {
   publishDate: string;
   q?: string;
   category?: string;
+  journal?: string;
   tag?: string;
   sort?: DigestSortKey;
   page?: number;
@@ -25,6 +26,7 @@ export type OverviewCacheParams = {
   q?: string;
   publish_date?: string;
   category?: string;
+  journal?: string;
   tag?: string;
   sort?: DigestSortKey;
   initial_group_count?: number;

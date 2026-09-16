@@ -57,6 +57,7 @@ export type PaperLibraryOverview = {
   available_publish_dates: string[];
   available_categories: string[];
   available_tags: string[];
+  available_journals?: string[];
   groups: PaperLibraryGroupSummary[];
   loaded_groups: PaperLibraryGroup[];
   sort: DigestSortKey;
@@ -252,6 +253,7 @@ export async function fetchPaperLibraryOverview(params: {
   q?: string;
   publish_date?: string;
   category?: string;
+  journal?: string;
   tag?: string;
   sort?: DigestSortKey;
   initial_group_count?: number;
@@ -260,6 +262,7 @@ export async function fetchPaperLibraryOverview(params: {
     q: params.q || "",
     publish_date: params.publish_date || "",
     category: params.category || "",
+    journal: params.journal || "",
     tag: params.tag || "",
     sort: params.sort || "publish_date_desc",
     initial_group_count: params.initial_group_count ? String(params.initial_group_count) : "",
@@ -272,6 +275,7 @@ export async function fetchPaperLibraryGroup(
   params: {
     q?: string;
     category?: string;
+    journal?: string;
     tag?: string;
     sort?: DigestSortKey;
     page?: number;
@@ -281,6 +285,7 @@ export async function fetchPaperLibraryGroup(
   const query = buildQueryString({
     q: params.q || "",
     category: params.category || "",
+    journal: params.journal || "",
     tag: params.tag || "",
     sort: params.sort || "publish_date_desc",
     page: params.page ? String(params.page) : "",

@@ -48,6 +48,7 @@ export function useFilterUrlSync(
     if (filters.query.trim()) next.set("q", filters.query.trim());
     if (filters.publishDate) next.set("publish_date", filters.publishDate);
     if (filters.category) next.set("category", filters.category);
+    if (filters.journal) next.set("journal", filters.journal);
     if (filters.tag) next.set("tag", filters.tag);
     if (filters.sort !== "publish_date_desc") next.set("sort", filters.sort);
     setSearchParams(next, { replace: true });
@@ -78,6 +79,7 @@ async function loadOverview(options: OverviewLoaderOptions, isIgnored: () => boo
     q: appliedFilters.query,
     publish_date: appliedFilters.publishDate,
     category: appliedFilters.category,
+    journal: appliedFilters.journal,
     tag: appliedFilters.tag,
     sort: appliedFilters.sort,
     initial_group_count: DIGEST_INITIAL_GROUP_COUNT,
@@ -111,6 +113,7 @@ async function loadOverview(options: OverviewLoaderOptions, isIgnored: () => boo
       q: appliedFilters.query,
       publish_date: appliedFilters.publishDate,
       category: appliedFilters.category,
+      journal: appliedFilters.journal,
       tag: appliedFilters.tag,
       sort: appliedFilters.sort,
       initial_group_count: DIGEST_INITIAL_GROUP_COUNT,
@@ -154,6 +157,7 @@ export function useOverviewLoader(options: OverviewLoaderOptions) {
         q: appliedFilters.query,
         publish_date: appliedFilters.publishDate,
         category: appliedFilters.category,
+        journal: appliedFilters.journal,
         tag: appliedFilters.tag,
         sort: appliedFilters.sort,
         initial_group_count: DIGEST_INITIAL_GROUP_COUNT,
@@ -170,6 +174,7 @@ export function useOverviewLoader(options: OverviewLoaderOptions) {
     };
   }, [
     appliedFilters.category,
+    appliedFilters.journal,
     appliedFilters.publishDate,
     appliedFilters.query,
     appliedFilters.sort,

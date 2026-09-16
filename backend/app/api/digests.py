@@ -133,6 +133,7 @@ def get_paper_library_overview(
     response: Response,
     q: Optional[str] = None,
     category: Optional[str] = None,
+    journal: Optional[str] = None,
     tag: Optional[str] = None,
     publish_date: Optional[str] = None,
     sort: str = Query(default="publish_date_desc"),
@@ -147,6 +148,7 @@ def get_paper_library_overview(
         PaperLibraryFilters(
             query=q or "",
             category=category or "",
+            journal=journal or "",
             tag=tag or "",
             publish_date=publish_date or "",
             sort=normalize_library_sort(sort),
@@ -161,6 +163,7 @@ def get_paper_library_group(
     response: Response,
     q: Optional[str] = None,
     category: Optional[str] = None,
+    journal: Optional[str] = None,
     tag: Optional[str] = None,
     sort: str = Query(default="publish_date_desc"),
     page: int = Query(default=1, ge=1),
@@ -175,6 +178,7 @@ def get_paper_library_group(
         PaperLibraryFilters(
             query=q or "",
             category=category or "",
+            journal=journal or "",
             tag=tag or "",
             publish_date="",
             sort=normalize_library_sort(sort),

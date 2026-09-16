@@ -130,6 +130,7 @@ class PaperLibraryOverview(BaseModel):
     available_publish_dates: list[str]
     available_categories: list[str]
     available_tags: list[str]
+    available_journals: list[str] = []
     groups: list[PaperLibraryGroupSummary]
     loaded_groups: list[PaperLibraryGroup]
     sort: str

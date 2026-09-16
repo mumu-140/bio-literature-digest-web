@@ -327,6 +327,33 @@ class PaperLibraryApiTest(unittest.TestCase):
             self.assertEqual(response.json()["total_papers"], 1)
             self.assertEqual(response.json()["loaded_groups"][0]["items"][0]["title_en"], "Paper A")
 
+    def test_library_overview_and_group_supports_journal_filter(self) -> None:
+        with TestClient(self.app_factory()) as client:
+            login = client.post("/api/auth/login", json={"email": "admin@example.com"})
+            self.assertEqual(login.status_code, 200)
+            self._seed_papers()
+
+            # Test overview filter options and journal filter
+            response = client.get("/api/papers/library?journal=Cell&initial_group_count=3")
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload["available_journals"], ["Cell", "Nature", "Science", "The Lancet"])
+            self.assertEqual(payload["total_papers"], 2)
+            all_cell_items = [
+                item
+                for group in payload["loaded_groups"]
+                for item in group["items"]
+            ]
+            self.assertTrue(all(item["journal"] == "Cell" for item in all_cell_items))
+
+            # Test group pagination endpoint with journal filter
+            group_response = client.get("/api/papers/library/groups/2026-04-09?journal=Nature")
+            self.assertEqual(group_response.status_code, 200)
+            group_payload = group_response.json()
+            self.assertEqual(group_payload["paper_count"], 1)
+            self.assertEqual(group_payload["items"][0]["journal"], "Nature")
+            self.assertEqual(group_payload["items"][0]["title_en"], "Paper A")
+
 
 if __name__ == "__main__":
     unittest.main()

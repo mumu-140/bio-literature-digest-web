@@ -40,21 +40,23 @@ class DigestCacheService {
   buildGroupKey(params: GroupCacheParams): string {
     const q = (params.q || "").trim().toLowerCase();
     const category = (params.category || "").trim();
+    const journal = (params.journal || "").trim();
     const tag = (params.tag || "").trim();
     const sort = params.sort || "publish_date_desc";
     const page = params.page || 1;
     const pageSize = params.page_size || 50;
-    return `${params.publishDate}::${q}::${category}::${tag}::${sort}::p${page}_s${pageSize}`;
+    return `${params.publishDate}::${q}::${category}::${journal}::${tag}::${sort}::p${page}_s${pageSize}`;
   }
 
   buildOverviewKey(params: OverviewCacheParams): string {
     const q = (params.q || "").trim().toLowerCase();
     const publishDate = (params.publish_date || "").trim();
     const category = (params.category || "").trim();
+    const journal = (params.journal || "").trim();
     const tag = (params.tag || "").trim();
     const sort = params.sort || "publish_date_desc";
     const initialCount = params.initial_group_count || 1;
-    return `ov::${q}::${publishDate}::${category}::${tag}::${sort}::c${initialCount}`;
+    return `ov::${q}::${publishDate}::${category}::${journal}::${tag}::${sort}::c${initialCount}`;
   }
 
   getCachedGroup(params: GroupCacheParams): PaperLibraryGroup | undefined {
@@ -79,13 +81,14 @@ class DigestCacheService {
 
   seedGroupsFromOverview(
     groups: PaperLibraryGroup[],
-    baseFilters: { q?: string; category?: string; tag?: string; sort?: DigestSortKey },
+    baseFilters: { q?: string; category?: string; journal?: string; tag?: string; sort?: DigestSortKey },
   ): void {
     for (const group of groups) {
       const key = this.buildGroupKey({
         publishDate: group.publish_date,
         q: baseFilters.q,
         category: baseFilters.category,
+        journal: baseFilters.journal,
         tag: baseFilters.tag,
         sort: baseFilters.sort,
         page: group.page,
@@ -118,6 +121,7 @@ class DigestCacheService {
         const group = await fetchPaperLibraryGroup(params.publishDate, {
           q: params.q,
           category: params.category,
+          journal: params.journal,
           tag: params.tag,
           sort: params.sort,
           page: params.page,

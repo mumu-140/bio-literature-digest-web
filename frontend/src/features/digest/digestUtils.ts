@@ -8,6 +8,7 @@ export type PaperFilters = {
   query: string;
   publishDate: string;
   category: string;
+  journal: string;
   tag: string;
   sort: DigestSortKey;
 };
@@ -17,7 +18,7 @@ export function getPaperSelectionKey(item: PaperItem) {
 }
 
 export function hasDigestSearchParams(searchParams: URLSearchParams) {
-  return ["q", "publish_date", "date", "category", "tag", "sort"].some((key) => Boolean(searchParams.get(key)));
+  return ["q", "publish_date", "date", "category", "journal", "tag", "sort"].some((key) => Boolean(searchParams.get(key)));
 }
 
 export function buildPaperFiltersFromSearchParams(searchParams: URLSearchParams): PaperFilters {
@@ -26,6 +27,7 @@ export function buildPaperFiltersFromSearchParams(searchParams: URLSearchParams)
     query: searchParams.get("q") || "",
     publishDate: searchParams.get("publish_date") || searchParams.get("date") || "",
     category: searchParams.get("category") || "",
+    journal: searchParams.get("journal") || "",
     tag: searchParams.get("tag") || "",
     sort: sort === "publish_date_asc" ? "publish_date_asc" : "publish_date_desc",
   };
@@ -36,6 +38,7 @@ export function arePaperFiltersEqual(left: PaperFilters, right: PaperFilters) {
     left.query === right.query &&
     left.publishDate === right.publishDate &&
     left.category === right.category &&
+    left.journal === right.journal &&
     left.tag === right.tag &&
     left.sort === right.sort
   );

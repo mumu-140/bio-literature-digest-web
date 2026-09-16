@@ -26,6 +26,7 @@ _DATE_PREFIX_PATTERN = re.compile(r"(\d{4}-\d{2}-\d{2})")
 class PaperLibraryFilters:
     query: str = ""
     category: str = ""
+    journal: str = ""
     tag: str = ""
     publish_date: str = ""
     sort: str = DEFAULT_LIBRARY_SORT
@@ -84,6 +85,7 @@ def build_paper_library_overview(
     normalized_filters = PaperLibraryFilters(
         query=filters.query.strip(),
         category=filters.category.strip(),
+        journal=filters.journal.strip(),
         tag=filters.tag.strip(),
         publish_date=_normalize_requested_publish_date(filters.publish_date),
         sort=normalize_library_sort(filters.sort),
@@ -109,6 +111,7 @@ def build_paper_library_overview(
         available_publish_dates=filter_options["available_publish_dates"],
         available_categories=filter_options["available_categories"],
         available_tags=filter_options["available_tags"],
+        available_journals=filter_options["available_journals"],
         groups=[
             PaperLibraryGroupSummary(publish_date=publish_date, paper_count=group_counts[publish_date])
             for publish_date in ordered_dates
@@ -148,6 +151,7 @@ def load_paper_library_group(
     normalized_filters = PaperLibraryFilters(
         query=filters.query.strip(),
         category=filters.category.strip(),
+        journal=filters.journal.strip(),
         tag=filters.tag.strip(),
         publish_date=requested_publish_date,
         sort=normalize_library_sort(filters.sort),
@@ -179,6 +183,7 @@ def collect_paper_library_filter_options(db: Session) -> dict[str, list[str]]:
             ImportedLiteratureItem.category,
             ImportedLiteratureItem.publish_date,
             ImportedLiteratureItem.tags_json,
+            ImportedLiteratureItem.journal,
         )
         .join(ImportedDigestMembership, ImportedDigestMembership.literature_item_id == ImportedLiteratureItem.id)
         .where(ImportedDigestMembership.list_type == "digest")
@@ -187,11 +192,15 @@ def collect_paper_library_filter_options(db: Session) -> dict[str, list[str]]:
     publish_dates: set[str] = set()
     categories: set[str] = set()
     tags: set[str] = set()
+    journals: set[str] = set()
 
     for row in rows:
         category = str(row.category or "").strip()
         if category:
             categories.add(category)
+        journal = str(row.journal or "").strip()
+        if journal:
+            journals.add(journal)
         normalized_publish_date = normalize_publish_date(str(row.publish_date or ""))
         if normalized_publish_date:
             publish_dates.add(normalized_publish_date)
@@ -204,6 +213,7 @@ def collect_paper_library_filter_options(db: Session) -> dict[str, list[str]]:
         "available_publish_dates": order_publish_dates(publish_dates, DEFAULT_LIBRARY_SORT),
         "available_categories": sorted(categories),
         "available_tags": sorted(tags),
+        "available_journals": sorted(journals),
     }
 
 
@@ -220,6 +230,8 @@ def load_paper_library_papers(db: Session, user_id: int, filters: PaperLibraryFi
     )
     if filters.category:
         statement = statement.where(ImportedLiteratureItem.category == filters.category)
+    if filters.journal:
+        statement = statement.where(ImportedLiteratureItem.journal == filters.journal)
     if filters.query:
         statement = _apply_text_filter(db, statement, filters.query)
     if filters.publish_date and filters.publish_date != UNKNOWN_PUBLISH_DATE:
@@ -253,6 +265,8 @@ def load_paper_library_index(db: Session, filters: PaperLibraryFilters) -> list[
     )
     if filters.category:
         statement = statement.where(ImportedLiteratureItem.category == filters.category)
+    if filters.journal:
+        statement = statement.where(ImportedLiteratureItem.journal == filters.journal)
     if filters.query:
         statement = _apply_text_filter(db, statement, filters.query)
     if filters.publish_date and filters.publish_date != UNKNOWN_PUBLISH_DATE:
@@ -276,7 +290,7 @@ def load_paper_library_index(db: Session, filters: PaperLibraryFilters) -> list[
 
 
 def _can_use_materialized_stats(filters: PaperLibraryFilters) -> bool:
-    return not any((filters.query, filters.category, filters.tag, filters.publish_date))
+    return not any((filters.query, filters.category, filters.journal, filters.tag, filters.publish_date))
 
 
 def _apply_text_filter(db: Session, statement, query: str):

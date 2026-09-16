@@ -57,6 +57,7 @@ export function useDigestPrefetch({
             publishDate: date,
             q: appliedFilters.query,
             category: appliedFilters.category,
+            journal: appliedFilters.journal,
             tag: appliedFilters.tag,
             sort: appliedFilters.sort,
           })
@@ -69,6 +70,7 @@ export function useDigestPrefetch({
           publishDate: date,
           q: appliedFilters.query,
           category: appliedFilters.category,
+          journal: appliedFilters.journal,
           tag: appliedFilters.tag,
           sort: appliedFilters.sort,
         });

@@ -104,9 +104,10 @@ function ActiveFilterPills({ digest }: { digest: DigestController }) {
   const hasQuery = Boolean(filters.query.trim());
   const hasDate = Boolean(filters.publishDate);
   const hasCategory = Boolean(filters.category);
+  const hasJournal = Boolean(filters.journal);
   const hasTag = Boolean(filters.tag);
 
-  if (!hasQuery && !hasDate && !hasCategory && !hasTag) {
+  if (!hasQuery && !hasDate && !hasCategory && !hasJournal && !hasTag) {
     return null;
   }
 
@@ -156,6 +157,21 @@ function ActiveFilterPills({ digest }: { digest: DigestController }) {
               onClick={() => setFilters((prev) => ({ ...prev, category: "" }))}
               title="清除分类筛选"
               aria-label="清除分类筛选"
+            >
+              <IconXMark size={12} />
+            </button>
+          </span>
+        ) : null}
+
+        {hasJournal ? (
+          <span className="filter-pill">
+            <span className="filter-pill-text">期刊: {filters.journal}</span>
+            <button
+              type="button"
+              className="filter-pill-remove"
+              onClick={() => setFilters((prev) => ({ ...prev, journal: "" }))}
+              title="清除期刊筛选"
+              aria-label="清除期刊筛选"
             >
               <IconXMark size={12} />
             </button>
@@ -249,6 +265,22 @@ function FilterControls({ digest }: { digest: DigestController }) {
       >
         <option value="">全部分类 ({digest.categoryOptions.length})</option>
         {digest.categoryOptions.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+
+      <select
+        aria-label="期刊"
+        name="journal"
+        value={digest.filters.journal}
+        onChange={(event) =>
+          digest.setFilters((current) => ({ ...current, journal: event.target.value }))
+        }
+      >
+        <option value="">全部期刊 ({digest.journalOptions.length})</option>
+        {digest.journalOptions.map((option) => (
           <option key={option} value={option}>
             {option}
           </option>
