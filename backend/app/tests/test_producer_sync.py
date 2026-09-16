@@ -501,6 +501,46 @@ class ProducerSyncTest(unittest.TestCase):
         self.assertEqual(item.title_en, "New title")
         self.assertEqual([(membership.list_type, membership.row_index) for membership in memberships], [("daily_review", 1), ("digest", 1)])
 
+    def test_upsert_item_preserves_existing_translations_when_incoming_is_empty(self) -> None:
+        from datetime import datetime
+        from app.integrations.producer_import.importer import _upsert_item
+
+        now = datetime.utcnow()
+        with database.SessionLocal() as db:
+            item, created = _upsert_item(
+                db,
+                payload={
+                    "literature_item_key": "doi:10.1000/trans_test",
+                    "title_en": "CRISPR crops in Europe",
+                    "title_zh": "CRISPR作物在欧洲",
+                    "summary_zh": "该文研究了CRISPR大豆。",
+                    "abstract": "We studied CRISPR crops.",
+                },
+                now=now,
+            )
+            db.commit()
+            self.assertTrue(created)
+            self.assertEqual(item.title_zh, "CRISPR作物在欧洲")
+            self.assertEqual(item.summary_zh, "该文研究了CRISPR大豆。")
+
+            # Second upsert with empty title_zh and summary_zh (like review_queue)
+            updated_item, created_2 = _upsert_item(
+                db,
+                payload={
+                    "literature_item_key": "doi:10.1000/trans_test",
+                    "title_en": "CRISPR crops in Europe",
+                    "title_zh": "",
+                    "summary_zh": "",
+                    "abstract": "",
+                },
+                now=now,
+            )
+            db.commit()
+            self.assertFalse(created_2)
+            self.assertEqual(updated_item.title_zh, "CRISPR作物在欧洲")
+            self.assertEqual(updated_item.summary_zh, "该文研究了CRISPR大豆。")
+            self.assertEqual(updated_item.abstract, "We studied CRISPR crops.")
+
 
 if __name__ == "__main__":
     unittest.main()

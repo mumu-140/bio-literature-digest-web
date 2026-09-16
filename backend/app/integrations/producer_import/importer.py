@@ -83,26 +83,39 @@ def _upsert_item(
         db.add(item)
         db.flush()
         created = True
-    item.doi = str(payload.get("doi") or "")
-    item.canonical_url = str(payload.get("canonical_url") or "")
-    item.article_url = str(payload.get("article_url") or "")
-    item.journal = str(payload.get("journal") or "")
-    item.publish_date = str(payload.get("publish_date") or "")
-    item.publication_stage = str(payload.get("publication_stage") or "journal")
-    item.category = str(payload.get("category") or "other")
-    item.interest_level = str(payload.get("interest_level") or "一般")
-    item.interest_score = int(payload.get("interest_score") or 3)
-    item.interest_tag = str(payload.get("interest_tag") or "")
-    item.title_en = str(payload.get("title_en") or "")
-    item.title_zh = str(payload.get("title_zh") or "")
-    item.summary_zh = str(payload.get("summary_zh") or "")
-    item.abstract = str(payload.get("abstract") or "")
-    item.source_id = str(payload.get("source_id") or "")
-    item.publisher_family = str(payload.get("publisher_family") or "")
-    item.group_name = str(payload.get("group_name") or "")
-    item.authors_json = list(payload.get("authors_json") or [])
-    item.tags_json = list(payload.get("tags_json") or [])
-    item.extra_json = dict(payload.get("extra_json") or {})
+    item.doi = str(payload.get("doi") or item.doi or "")
+    item.canonical_url = str(payload.get("canonical_url") or item.canonical_url or "")
+    item.article_url = str(payload.get("article_url") or item.article_url or "")
+    item.journal = str(payload.get("journal") or item.journal or "")
+    item.publish_date = str(payload.get("publish_date") or item.publish_date or "")
+    item.publication_stage = str(payload.get("publication_stage") or item.publication_stage or "journal")
+    item.category = str(payload.get("category") or item.category or "other")
+    item.interest_level = str(payload.get("interest_level") or item.interest_level or "一般")
+    item.interest_score = int(payload.get("interest_score") or item.interest_score or 3)
+    item.interest_tag = str(payload.get("interest_tag") or item.interest_tag or "")
+
+    incoming_title_en = str(payload.get("title_en") or "").strip()
+    if incoming_title_en or not item.title_en:
+        item.title_en = incoming_title_en
+
+    incoming_title_zh = str(payload.get("title_zh") or "").strip()
+    if incoming_title_zh or not item.title_zh:
+        item.title_zh = incoming_title_zh
+
+    incoming_summary_zh = str(payload.get("summary_zh") or "").strip()
+    if incoming_summary_zh or not item.summary_zh:
+        item.summary_zh = incoming_summary_zh
+
+    incoming_abstract = str(payload.get("abstract") or "").strip()
+    if incoming_abstract or not item.abstract:
+        item.abstract = incoming_abstract
+
+    item.source_id = str(payload.get("source_id") or item.source_id or "")
+    item.publisher_family = str(payload.get("publisher_family") or item.publisher_family or "")
+    item.group_name = str(payload.get("group_name") or item.group_name or "")
+    item.authors_json = list(payload.get("authors_json") or item.authors_json or [])
+    item.tags_json = list(payload.get("tags_json") or item.tags_json or [])
+    item.extra_json = dict(payload.get("extra_json") or item.extra_json or {})
     item.last_seen_at = now
     item.imported_at = now
     return item, created

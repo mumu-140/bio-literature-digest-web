@@ -120,7 +120,10 @@ def _read_records(connection: sqlite3.Connection, run_ids: list[str]) -> dict[st
         FROM paper_records AS pr
         JOIN papers AS p ON p.id = pr.paper_id
         WHERE pr.run_id IN ({placeholders})
-        ORDER BY pr.archive_date ASC, pr.dataset ASC, pr.id ASC
+        ORDER BY pr.archive_date ASC,
+                 (CASE WHEN pr.dataset = 'review_queue' THEN 0 ELSE 1 END) ASC,
+                 (CASE WHEN pr.title_zh IS NOT NULL AND length(trim(pr.title_zh)) > 0 THEN 1 ELSE 0 END) ASC,
+                 pr.id ASC
         """,
         run_ids,
     ).fetchall()
