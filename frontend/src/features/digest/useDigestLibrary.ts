@@ -54,10 +54,16 @@ export function useDigestLibrary({ user }: { user: AuthUser }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const hasExplicitDigestParams = hasDigestSearchParams(searchParams);
   const storedDigestState = restoreDigestPageState();
+  const storedFilters: PaperFilters | null = storedDigestState?.filters
+    ? {
+        ...storedDigestState.filters,
+        journal: storedDigestState.filters.journal || "",
+      }
+    : null;
   const initialFilters = hasExplicitDigestParams
     ? buildPaperFiltersFromSearchParams(searchParams)
-    : storedDigestState?.filters ?? buildPaperFiltersFromSearchParams(searchParams);
-  const canRestoreDigestSnapshot = Boolean(storedDigestState && arePaperFiltersEqual(storedDigestState.filters, initialFilters));
+    : storedFilters ?? buildPaperFiltersFromSearchParams(searchParams);
+  const canRestoreDigestSnapshot = Boolean(storedFilters && arePaperFiltersEqual(storedFilters, initialFilters));
   const storedDigestCache = canRestoreDigestSnapshot ? restoreDigestPageCache() : null;
   const initialLoadedGroups = storedDigestCache?.loadedGroups || storedDigestCache?.overview?.loaded_groups || [];
 

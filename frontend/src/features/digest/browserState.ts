@@ -11,6 +11,7 @@ export type DigestPageFilters = {
   query: string;
   publishDate: string;
   category: string;
+  journal?: string;
   tag: string;
   sort: DigestSortKey;
 };
