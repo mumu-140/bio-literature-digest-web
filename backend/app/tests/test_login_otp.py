@@ -153,20 +153,19 @@ class LoginOtpTestCase(unittest.TestCase):
             self.assertIn("bio_digest_session", response.cookies)
 
     def test_inactive_user_cannot_request_or_verify(self) -> None:
-        database.configure_database()
-        with database.SessionLocal() as db:
-            db.add(
-                User(
-                    email="frozen@example.com",
-                    name="Frozen",
-                    role="member",
-                    user_group="internal",
-                    is_active=False,
-                )
-            )
-            db.commit()
-
         with TestClient(self.app_factory()) as client:
+            with database.SessionLocal() as db:
+                db.add(
+                    User(
+                        email="frozen@example.com",
+                        name="Frozen",
+                        role="member",
+                        user_group="internal",
+                        is_active=False,
+                    )
+                )
+                db.commit()
+
             request = client.post("/api/auth/login/otp/request", json={"email": "frozen@example.com"})
             self.assertEqual(request.status_code, 403)
 
