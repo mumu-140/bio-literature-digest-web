@@ -153,6 +153,7 @@ class LoginOtpTestCase(unittest.TestCase):
             self.assertIn("bio_digest_session", response.cookies)
 
     def test_inactive_user_cannot_request_or_verify(self) -> None:
+        self.app_factory()
         with database.SessionLocal() as db:
             db.add(
                 User(
