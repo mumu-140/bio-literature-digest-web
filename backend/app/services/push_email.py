@@ -12,6 +12,21 @@ class PushEmailError(RuntimeError):
     """Raised when the push notification email cannot be queued."""
 
 
+def send_otp_email(*, email: str, code: str, ttl_minutes: int) -> None:
+    """Queue one login verification code through the existing Agently account."""
+    _send_raw_message(
+        to=email,
+        subject="[Bio Digest] 登录验证码",
+        body=(
+            "<p>您好：</p>"
+            f"<p>本次登录验证码为 <strong>{html.escape(code)}</strong>"
+            f"，{ttl_minutes} 分钟内有效。</p>"
+            "<p>验证码仅供本人登录使用，请勿转发给任何人。"
+            "若非本人操作，请忽略本邮件。</p>"
+        ),
+    )
+
+
 def send_push_email(*, recipient: User, sender: User, paper: ImportedLiteratureItem, note: str) -> None:
     """Queue one literature notification through the existing Agently account."""
     settings = get_settings()
@@ -53,12 +68,16 @@ def send_push_email_batch(
 
 
 def _send_message(*, recipient: User, subject: str, body: str) -> None:
+    _send_raw_message(to=recipient.email, subject=subject, body=body)
+
+
+def _send_raw_message(*, to: str, subject: str, body: str) -> None:
     command = [
         "/root/.local/bin/agently-cli",
         "message",
         "+send",
         "--to",
-        recipient.email,
+        to,
         "--subject",
         subject,
         "--body",

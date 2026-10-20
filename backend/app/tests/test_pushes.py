@@ -23,6 +23,7 @@ class PushFlowTest(unittest.TestCase):
         os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
         os.environ["INITIAL_ADMIN_EMAIL"] = "admin@example.com"
         os.environ["PRODUCER_SYNC_ENABLED"] = "false"
+        os.environ["OTP_LOGIN_ENABLED"] = "false"
         os.environ["PUSH_EMAIL_WORKER_ENABLED"] = "false"
         database.engine = None
         database.SessionLocal = None
@@ -35,6 +36,7 @@ class PushFlowTest(unittest.TestCase):
         self.tmpdir.cleanup()
         os.environ.pop("DATABASE_URL", None)
         os.environ.pop("INITIAL_ADMIN_EMAIL", None)
+        os.environ.pop("OTP_LOGIN_ENABLED", None)
         os.environ.pop("PRODUCER_SYNC_ENABLED", None)
         os.environ.pop("PUSH_EMAIL_WORKER_ENABLED", None)
         database.engine = None

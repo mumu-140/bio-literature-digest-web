@@ -21,6 +21,7 @@ class AuthAndFavoritesTest(unittest.TestCase):
         os.environ["INITIAL_ADMIN_EMAIL"] = "admin@example.com"
         os.environ["ACCESS_TRACE_DIR"] = str(Path(self.tmpdir.name) / "access-traces")
         os.environ["PRODUCER_SYNC_ENABLED"] = "false"
+        os.environ["OTP_LOGIN_ENABLED"] = "false"
         database.engine = None
         database.SessionLocal = None
         reset_settings_cache()
@@ -34,6 +35,7 @@ class AuthAndFavoritesTest(unittest.TestCase):
         os.environ.pop("DATABASE_URL", None)
         os.environ.pop("INITIAL_ADMIN_EMAIL", None)
         os.environ.pop("ACCESS_TRACE_DIR", None)
+        os.environ.pop("OTP_LOGIN_ENABLED", None)
         os.environ.pop("PRODUCER_SYNC_ENABLED", None)
         database.engine = None
         database.SessionLocal = None
@@ -85,15 +87,14 @@ class AuthAndFavoritesTest(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["user"]["role"], "admin")
 
-    def test_login_auto_creates_member(self) -> None:
+    def test_login_rejects_unknown_email_without_auto_create(self) -> None:
         with TestClient(self.app_factory()) as client:
-            response = client.post("/api/auth/login", json={"email": "new-user@example.com", "name": "New User"})
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.json()["user"]["email"], "new-user@example.com")
-            self.assertEqual(response.json()["user"]["role"], "member")
+            response = client.post("/api/auth/login", json={"email": "stranger@example.com", "name": "Stranger"})
+            self.assertEqual(response.status_code, 403)
+            self.assertIn("未开通访问权限", response.json()["detail"])
 
             me = client.get("/api/auth/me")
-            self.assertEqual(me.status_code, 200)
+            self.assertEqual(me.status_code, 401)
 
     def test_favorite_reuses_local_imported_metadata(self) -> None:
         with TestClient(self.app_factory()) as client:

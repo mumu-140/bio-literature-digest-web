@@ -73,6 +73,19 @@ class Session(Base):
     user: Mapped[User] = relationship(back_populates="sessions")
 
 
+class LoginOtpCode(Base):
+    __tablename__ = "login_otp_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), index=True)
+    code_hash: Mapped[str] = mapped_column(String(255), index=True)
+    attempts_remaining: Mapped[int] = mapped_column(Integer, default=5)
+    created_ip: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    consumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
 class ActionLog(Base):
     __tablename__ = "action_logs"
 

@@ -19,6 +19,7 @@ class UserVisibilityTest(unittest.TestCase):
         os.environ["INITIAL_ADMIN_EMAIL"] = "primary-admin@example.com"
         os.environ["ACCESS_TRACE_DIR"] = str(Path(self.tmpdir.name) / "access-traces")
         os.environ["PRODUCER_SYNC_ENABLED"] = "false"
+        os.environ["OTP_LOGIN_ENABLED"] = "false"
         database.engine = None
         database.SessionLocal = None
         reset_settings_cache()
@@ -28,7 +29,7 @@ class UserVisibilityTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.tmpdir.cleanup()
-        for key in ("DATABASE_URL", "INITIAL_ADMIN_EMAIL", "ACCESS_TRACE_DIR", "PRODUCER_SYNC_ENABLED"):
+        for key in ("DATABASE_URL", "INITIAL_ADMIN_EMAIL", "ACCESS_TRACE_DIR", "OTP_LOGIN_ENABLED", "PRODUCER_SYNC_ENABLED"):
             os.environ.pop(key, None)
         database.engine = None
         database.SessionLocal = None

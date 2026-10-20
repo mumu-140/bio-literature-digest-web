@@ -230,14 +230,35 @@ function extractErrorMessage(payload: unknown): string {
   }
 }
 
+export type LoginOtpIssued = {
+  email: string;
+  expires_in: number;
+  resend_after: number;
+  dev_code?: string | null;
+};
+
 export async function fetchAuthUser() {
   return request<AuthUser>("/api/auth/me");
 }
 
 export async function login(form: { email: string; name: string }) {
-  return request<{ user: AuthUser }>("/api/auth/login", {
+  return request<{ user: AuthUser } | LoginOtpIssued>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify(form),
+  });
+}
+
+export async function requestLoginOtp(email: string) {
+  return request<LoginOtpIssued>("/api/auth/login/otp/request", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function verifyLoginOtp(email: string, code: string) {
+  return request<{ user: AuthUser }>("/api/auth/login/otp/verify", {
+    method: "POST",
+    body: JSON.stringify({ email, code }),
   });
 }
 

@@ -22,6 +22,7 @@ class PaperLibraryApiTest(unittest.TestCase):
         os.environ["INITIAL_ADMIN_EMAIL"] = "admin@example.com"
         os.environ["ACCESS_TRACE_DIR"] = str(Path(self.tmpdir.name) / "access-traces")
         os.environ["PRODUCER_SYNC_ENABLED"] = "false"
+        os.environ["OTP_LOGIN_ENABLED"] = "false"
         database.engine = None
         database.SessionLocal = None
         reset_settings_cache()
@@ -34,6 +35,7 @@ class PaperLibraryApiTest(unittest.TestCase):
         os.environ.pop("DATABASE_URL", None)
         os.environ.pop("INITIAL_ADMIN_EMAIL", None)
         os.environ.pop("ACCESS_TRACE_DIR", None)
+        os.environ.pop("OTP_LOGIN_ENABLED", None)
         os.environ.pop("PRODUCER_SYNC_ENABLED", None)
         database.engine = None
         database.SessionLocal = None

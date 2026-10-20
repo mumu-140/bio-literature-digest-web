@@ -29,6 +29,7 @@ class BatchPushFlowTest(unittest.TestCase):
         os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
         os.environ["INITIAL_ADMIN_EMAIL"] = "admin@example.com"
         os.environ["PRODUCER_SYNC_ENABLED"] = "false"
+        os.environ["OTP_LOGIN_ENABLED"] = "false"
         os.environ["PUSH_EMAIL_WORKER_ENABLED"] = "false"
         database.engine = None
         database.SessionLocal = None
@@ -42,6 +43,7 @@ class BatchPushFlowTest(unittest.TestCase):
         for key in (
             "DATABASE_URL",
             "INITIAL_ADMIN_EMAIL",
+            "OTP_LOGIN_ENABLED",
             "PRODUCER_SYNC_ENABLED",
             "PUSH_EMAIL_WORKER_ENABLED",
         ):

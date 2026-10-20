@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useEffect, useState } from "react";
+import { FormEvent, MouseEvent, ReactNode, useEffect, useState } from "react";
 import {
   NavLink,
   Navigate,
@@ -8,7 +8,15 @@ import {
   useNavigate,
   useSearchParams,
 } from "react-router-dom";
-import { AuthUser, fetchAuthUser, login, logout } from "./dataClient";
+import {
+  AuthUser,
+  fetchAuthUser,
+  login,
+  requestLoginOtp,
+  verifyLoginOtp,
+  type LoginOtpIssued,
+  logout,
+} from "./dataClient";
 import { AdminImportsPage } from "./features/admin/AdminImportsPage";
 import { AdminUsersPage } from "./features/admin/AdminUsersPage";
 import { DigestPage } from "./features/digest/DigestPage";
@@ -334,7 +342,12 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const hintedEmail = searchParams.get("email") || "";
-  const [form, setForm] = useState({ email: searchParams.get("email") || "", name: "" });
+  const [form, setForm] = useState({ email: searchParams.get("email") || "" });
+  const [name, setName] = useState("");
+  const [stage, setStage] = useState<"email" | "code">("email");
+  const [issued, setIssued] = useState<LoginOtpIssued | null>(null);
+  const [code, setCode] = useState("");
+  const [resendIn, setResendIn] = useState(0);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -342,12 +355,56 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
     setForm((current) => (current.email === hintedEmail ? current : { ...current, email: hintedEmail }));
   }, [hintedEmail]);
 
-  async function submit(event: FormEvent) {
+  useEffect(() => {
+    if (resendIn <= 0) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setResendIn((value) => (value <= 1 ? 0 : value - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [resendIn]);
+
+  function handleIssued(next: LoginOtpIssued) {
+    setIssued(next);
+    setStage("code");
+    setResendIn(Math.max(next.resend_after, 1));
+    setCode("");
+  }
+
+  async function submitEmail(event: FormEvent) {
     event.preventDefault();
     setPending(true);
     setError("");
     try {
-      const response = await login(form);
+      const response = await login({ email: form.email, name });
+      const issuedResponse = response as LoginOtpIssued;
+      if (issuedResponse && "resend_after" in issuedResponse && issuedResponse.resend_after !== undefined) {
+        handleIssued(issuedResponse);
+      } else {
+        onLogin((response as { user: AuthUser }).user);
+        navigate(
+          sanitizeRememberedRoute(searchParams.get("next")) ||
+            restoreRememberedRoute() ||
+            "/papers/published",
+          {
+            replace: true,
+          },
+        );
+      }
+    } catch (submitError) {
+      setError((submitError as Error).message);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function submitCode(event: FormEvent) {
+    event.preventDefault();
+    setPending(true);
+    setError("");
+    try {
+      const response = await verifyLoginOtp(form.email, code);
       onLogin(response.user);
       navigate(
         sanitizeRememberedRoute(searchParams.get("next")) ||
@@ -359,6 +416,22 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
       );
     } catch (submitError) {
       setError((submitError as Error).message);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function resendCode(event: MouseEvent) {
+    event.preventDefault();
+    if (resendIn > 0) {
+      return;
+    }
+    setPending(true);
+    setError("");
+    try {
+      handleIssued(await requestLoginOtp(form.email));
+    } catch (resendError) {
+      setError((resendError as Error).message);
     } finally {
       setPending(false);
     }
@@ -384,37 +457,96 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
           </div>
         ) : null}
 
-        <form className="stack login-form" onSubmit={submit}>
-          <label>
-            <span className="field-label">电子邮箱</span>
-            <input
-              type="email"
-              required
-              placeholder="name@example.com"
-              value={form.email}
-              onChange={(event) => setForm({ ...form, email: event.target.value })}
-            />
-          </label>
-          <label>
-            <span className="field-label">显示姓名（可选）</span>
-            <input
-              placeholder="例如：杨森"
-              value={form.name}
-              onChange={(event) => setForm({ ...form, name: event.target.value })}
-            />
-          </label>
-          {error ? <div className="notice-banner is-error">{error}</div> : null}
-          <button className="primary-button login-submit-btn" type="submit" disabled={pending}>
-            {pending ? (
-              <>
-                <span className="loading-spinner" />
-                <span>正在验证登录…</span>
-              </>
-            ) : (
-              <span>进入文献工作台</span>
-            )}
-          </button>
-        </form>
+        {stage === "email" ? (
+          <form className="stack login-form" onSubmit={submitEmail}>
+            <label>
+              <span className="field-label">电子邮箱</span>
+              <input
+                type="email"
+                required
+                placeholder="name@example.com"
+                value={form.email}
+                onChange={(event) => setForm({ ...form, email: event.target.value })}
+              />
+            </label>
+            <label>
+              <span className="field-label">显示姓名（可选）</span>
+              <input
+                placeholder="例如：杨森"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
+            </label>
+            {error ? <div className="notice-banner is-error">{error}</div> : null}
+            <button className="primary-button login-submit-btn" type="submit" disabled={pending}>
+              {pending ? (
+                <>
+                  <span className="loading-spinner" />
+                  <span>正在发送登录验证码…</span>
+                </>
+              ) : (
+                <span>获取登录验证码</span>
+              )}
+            </button>
+          </form>
+        ) : (
+          <form className="stack login-form" onSubmit={submitCode}>
+            <p className="muted">
+              验证码已发送至 <strong>{form.email}</strong>，请查收邮件并在
+              {" "}{issued ? Math.max(Math.ceil(issued.expires_in / 60), 1) : 10}{" "}
+              分钟内完成登录。
+            </p>
+            <label>
+              <span className="field-label">登录验证码</span>
+              <input
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                required
+                placeholder="6 位数字"
+                value={code}
+                onChange={(event) => setCode(event.target.value)}
+              />
+            </label>
+            {error ? <div className="notice-banner is-error">{error}</div> : null}
+            <button className="primary-button login-submit-btn" type="submit" disabled={pending}>
+              {pending ? (
+                <>
+                  <span className="loading-spinner" />
+                  <span>正在验证登录…</span>
+                </>
+              ) : (
+                <span>进入文献工作台</span>
+              )}
+            </button>
+            <p className="muted">
+              {resendIn > 0 ? (
+                <span>{resendIn} 秒后可重新发送验证码</span>
+              ) : (
+                <a
+                  href="#resend"
+                  onClick={(event) => {
+                    void resendCode(event);
+                  }}
+                >
+                  重新发送验证码
+                </a>
+              )}
+              {" · "}
+              <a
+                href="#back"
+                onClick={(event) => {
+                  event.preventDefault();
+                  setStage("email");
+                  setIssued(null);
+                  setCode("");
+                  setError("");
+                }}
+              >
+                返回修改邮箱
+              </a>
+            </p>
+          </form>
+        )}
       </div>
     </div>
   );

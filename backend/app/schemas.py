@@ -55,6 +55,22 @@ class LoginRequest(BaseModel):
     name: str = ""
 
 
+class LoginOtpRequest(BaseModel):
+    email: EmailStr
+
+
+class LoginOtpVerifyRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=8)
+
+
+class LoginOtpIssuedResponse(BaseModel):
+    email: EmailStr
+    expires_in: int
+    resend_after: int
+    dev_code: Optional[str] = None
+
+
 class AuthUser(BaseModel):
     id: int
     email: EmailStr
@@ -64,6 +80,10 @@ class AuthUser(BaseModel):
 
 
 class LoginResponse(BaseModel):
+    user: AuthUser
+
+
+class LoginVerifySuccessResponse(BaseModel):
     user: AuthUser
 
 

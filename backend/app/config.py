@@ -52,6 +52,15 @@ class Settings(BaseSettings):
     literature_api_scopes: str = "literature:read,reports:write,rules:read,rules:suggest,audit:read"
     push_email_worker_enabled: bool = True
     push_email_worker_interval_seconds: int = Field(default=10, ge=1)
+    otp_login_enabled: bool = True
+    otp_code_ttl_seconds: int = Field(default=600, ge=60, le=3600)
+    otp_code_length: int = Field(default=6, ge=6, le=8)
+    otp_max_verify_attempts: int = Field(default=5, ge=1, le=20)
+    otp_resend_cooldown_seconds: int = Field(default=60, ge=0, le=3600)
+    otp_per_email_hourly_limit: int = Field(default=5, ge=1, le=100)
+    otp_per_email_daily_limit: int = Field(default=15, ge=1, le=500)
+    otp_per_ip_hourly_limit: int = Field(default=20, ge=1, le=1000)
+    otp_dev_echo: bool = False
 
 
 def _resolve_path(raw_value: str, *, base_dir: Path) -> str:

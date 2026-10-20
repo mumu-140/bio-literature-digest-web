@@ -51,6 +51,7 @@ interest_tag_taxonomy:
         os.environ["INITIAL_ADMIN_EMAIL"] = "admin@example.com"
         os.environ["REVIEW_EXPORT_DIR"] = str(Path(self.tmpdir.name) / "review-tables")
         os.environ["PRODUCER_SYNC_ENABLED"] = "false"
+        os.environ["OTP_LOGIN_ENABLED"] = "false"
         os.environ["PRODUCER_ROOT"] = str(producer_root)
         database.engine = None
         database.SessionLocal = None
@@ -64,6 +65,7 @@ interest_tag_taxonomy:
         os.environ.pop("DATABASE_URL", None)
         os.environ.pop("INITIAL_ADMIN_EMAIL", None)
         os.environ.pop("REVIEW_EXPORT_DIR", None)
+        os.environ.pop("OTP_LOGIN_ENABLED", None)
         os.environ.pop("PRODUCER_SYNC_ENABLED", None)
         os.environ.pop("PRODUCER_ROOT", None)
         database.engine = None

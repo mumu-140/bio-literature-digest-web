@@ -22,6 +22,7 @@ class VersionedApiTest(unittest.TestCase):
         os.environ.update({
             "DATABASE_URL": f"sqlite:///{root / 'api.db'}",
             "INITIAL_ADMIN_EMAIL": "admin@example.com",
+            "OTP_LOGIN_ENABLED": "false",
             "PRODUCER_SYNC_ENABLED": "false",
             "ACCESS_TRACE_DIR": str(root / "access"),
             "PRODUCER_RULES_PATH": str(self.rules_path),
@@ -64,7 +65,7 @@ class VersionedApiTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.client.__exit__(None, None, None)
         for key in (
-            "DATABASE_URL", "INITIAL_ADMIN_EMAIL", "PRODUCER_SYNC_ENABLED",
+            "DATABASE_URL", "INITIAL_ADMIN_EMAIL", "OTP_LOGIN_ENABLED", "PRODUCER_SYNC_ENABLED",
             "ACCESS_TRACE_DIR", "PRODUCER_RULES_PATH", "PRODUCER_ROOT",
             "LITERATURE_API_BOOTSTRAP_TOKEN", "LITERATURE_API_CLIENT_NAME",
         ):
