@@ -30,10 +30,45 @@ import {
   IconArrowDownTray,
   IconChatBubble,
   IconExternalLink,
+  IconFilter,
   IconSearch,
   IconStar,
   IconXMark,
 } from "../shared/Icons";
+
+const shanghaiDateFormatter = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+function extractFavoriteDate(favoritedAt?: string | null): string {
+  const raw = (favoritedAt || "").trim();
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(raw);
+  const isoCandidate = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const parsed = new Date(hasTz ? isoCandidate : `${isoCandidate}Z`);
+  if (!Number.isNaN(parsed.getTime())) {
+    const parts = shanghaiDateFormatter.formatToParts(parsed);
+    const year = parts.find((p) => p.type === "year")?.value;
+    const month = parts.find((p) => p.type === "month")?.value;
+    const day = parts.find((p) => p.type === "day")?.value;
+    if (year && month && day) {
+      return `${year}-${month}-${day}`;
+    }
+  }
+  return raw.slice(0, 10);
+}
+
+const DECISION_FILTER_LABELS: Record<string, string> = {
+  keep: "已保留 (keep)",
+  follow_up: "继续跟进 (follow_up)",
+  archive: "已归档 (archive)",
+  exclude: "已排除 (exclude)",
+  none: "未指定结论",
+};
 
 export function FavoritesPage({ user }: { user: AuthUser }) {
   const adminUsers = useAdminUsers(user.role === "admin");
@@ -41,6 +76,7 @@ export function FavoritesPage({ user }: { user: AuthUser }) {
   const [targetUserId, setTargetUserId] = useState(String(user.id));
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [favoriteDateFilter, setFavoriteDateFilter] = useState("");
   const [decisionFilter, setDecisionFilter] = useState("");
   const [interestFilter, setInterestFilter] = useState("");
 
@@ -83,6 +119,7 @@ export function FavoritesPage({ user }: { user: AuthUser }) {
   useEffect(() => {
     void load();
     setEditingPaperId(null);
+    setFavoriteDateFilter("");
     setSaveMessage("");
     setSaveError("");
   }, [targetUserId]);
@@ -96,6 +133,18 @@ export function FavoritesPage({ user }: { user: AuthUser }) {
       setTargetUserId(String(adminUsers[0].id));
     }
   }, [adminUsers, targetUserId, user.role]);
+
+  const favoriteDateOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of favorites) {
+      const dateKey = extractFavoriteDate(item.favorited_at);
+      if (!dateKey) continue;
+      counts.set(dateKey, (counts.get(dateKey) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([date, count]) => ({ date, count }))
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [favorites]);
 
   // Client-side filtering
   const filteredFavorites = useMemo(() => {
@@ -112,6 +161,11 @@ export function FavoritesPage({ user }: { user: AuthUser }) {
           return false;
         }
       }
+      if (favoriteDateFilter) {
+        if (extractFavoriteDate(item.favorited_at) !== favoriteDateFilter) {
+          return false;
+        }
+      }
       if (decisionFilter) {
         if (decisionFilter === "none") {
           if (item.review_final_decision) return false;
@@ -125,7 +179,18 @@ export function FavoritesPage({ user }: { user: AuthUser }) {
       }
       return true;
     });
-  }, [favorites, searchQuery, decisionFilter, interestFilter]);
+  }, [favorites, searchQuery, favoriteDateFilter, decisionFilter, interestFilter]);
+
+  function clearFilters() {
+    setSearchQuery("");
+    setFavoriteDateFilter("");
+    setDecisionFilter("");
+    setInterestFilter("");
+  }
+
+  const hasActiveFilters = Boolean(
+    searchQuery.trim() || favoriteDateFilter || decisionFilter || interestFilter,
+  );
 
   const allFilteredSelected =
     filteredFavorites.length > 0 &&
@@ -299,6 +364,25 @@ export function FavoritesPage({ user }: { user: AuthUser }) {
         </div>
 
         <select
+          aria-label="按收藏日期筛选"
+          value={favoriteDateFilter}
+          onChange={(e) => setFavoriteDateFilter(e.target.value)}
+        >
+          <option value="">
+            全部收藏日期 ({favoriteDateOptions.length}天)
+          </option>
+          {favoriteDateFilter &&
+          !favoriteDateOptions.some((opt) => opt.date === favoriteDateFilter) ? (
+            <option value={favoriteDateFilter}>{favoriteDateFilter} (0篇)</option>
+          ) : null}
+          {favoriteDateOptions.map((opt) => (
+            <option key={opt.date} value={opt.date}>
+              {opt.date} ({opt.count}篇)
+            </option>
+          ))}
+        </select>
+
+        <select
           aria-label="按评审结论筛选"
           value={decisionFilter}
           onChange={(e) => setDecisionFilter(e.target.value)}
@@ -323,6 +407,86 @@ export function FavoritesPage({ user }: { user: AuthUser }) {
           <option value="非常一般">非常一般</option>
         </select>
       </div>
+
+      {hasActiveFilters ? (
+        <div className="active-filters-bar">
+          <span className="active-filters-label">
+            <IconFilter size={13} />
+            <span>当前筛选：</span>
+          </span>
+          <div className="active-filters-list">
+            {searchQuery.trim() ? (
+              <span className="filter-pill">
+                <span className="filter-pill-text">搜索: &quot;{searchQuery.trim()}&quot;</span>
+                <button
+                  type="button"
+                  className="filter-pill-remove"
+                  onClick={() => setSearchQuery("")}
+                  title="清除搜索词"
+                  aria-label="清除搜索词"
+                >
+                  <IconXMark size={12} />
+                </button>
+              </span>
+            ) : null}
+
+            {favoriteDateFilter ? (
+              <span className="filter-pill">
+                <span className="filter-pill-text">收藏日期: {favoriteDateFilter}</span>
+                <button
+                  type="button"
+                  className="filter-pill-remove"
+                  onClick={() => setFavoriteDateFilter("")}
+                  title="清除收藏日期筛选"
+                  aria-label="清除收藏日期筛选"
+                >
+                  <IconXMark size={12} />
+                </button>
+              </span>
+            ) : null}
+
+            {decisionFilter ? (
+              <span className="filter-pill">
+                <span className="filter-pill-text">
+                  结论: {DECISION_FILTER_LABELS[decisionFilter] || decisionFilter}
+                </span>
+                <button
+                  type="button"
+                  className="filter-pill-remove"
+                  onClick={() => setDecisionFilter("")}
+                  title="清除结论筛选"
+                  aria-label="清除结论筛选"
+                >
+                  <IconXMark size={12} />
+                </button>
+              </span>
+            ) : null}
+
+            {interestFilter ? (
+              <span className="filter-pill">
+                <span className="filter-pill-text">强度: {interestFilter}</span>
+                <button
+                  type="button"
+                  className="filter-pill-remove"
+                  onClick={() => setInterestFilter("")}
+                  title="清除强度筛选"
+                  aria-label="清除强度筛选"
+                >
+                  <IconXMark size={12} />
+                </button>
+              </span>
+            ) : null}
+
+            <button
+              type="button"
+              className="clear-all-filters-btn"
+              onClick={clearFilters}
+            >
+              清空全部筛选
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {/* Batch toolbar */}
       <div className={`selection-toolbar${selectedIds.length > 0 ? " is-active" : ""}`}>
@@ -412,7 +576,7 @@ export function FavoritesPage({ user }: { user: AuthUser }) {
             description={
               favorites.length === 0
                 ? "浏览“发布日期文献”时，点击星标收藏文献，即可沉淀在此处。"
-                : "请尝试清除搜索关键词或调整评审结论筛选。"
+                : "请尝试清除搜索关键词、收藏日期或评审筛选条件。"
             }
           />
         ) : null}
@@ -425,6 +589,7 @@ export function FavoritesPage({ user }: { user: AuthUser }) {
               const isSelected = selectedIds.includes(favorite.id);
               const isEditing = editingPaperId === favorite.paper_id;
               const isUnfaving = pendingUnfavIds.has(favorite.paper_id);
+              const favoriteDate = extractFavoriteDate(favorite.favorited_at);
 
               return (
                 <article
@@ -471,6 +636,11 @@ export function FavoritesPage({ user }: { user: AuthUser }) {
                       <span className="muted mobile-date">
                         {formatDigestDate(favorite.publish_date)}
                       </span>
+                      {favoriteDate ? (
+                        <span className="muted mobile-date" title={`收藏时间：${favorite.favorited_at}`}>
+                          收藏于 {favoriteDate}
+                        </span>
+                      ) : null}
                     </div>
 
                     {favorite.authors && favorite.authors.length ? (
@@ -572,6 +742,7 @@ export function FavoritesPage({ user }: { user: AuthUser }) {
                 const isSelected = selectedIds.includes(favorite.id);
                 const isEditing = editingPaperId === favorite.paper_id;
                 const isUnfaving = pendingUnfavIds.has(favorite.paper_id);
+                const favoriteDate = extractFavoriteDate(favorite.favorited_at);
 
                 return (
                   <tr key={favorite.id} className={`paper-row${isSelected ? " is-selected" : ""}`}>
@@ -611,6 +782,11 @@ export function FavoritesPage({ user }: { user: AuthUser }) {
                         <span className="muted journal-date">
                           {formatDigestDate(favorite.publish_date)}
                         </span>
+                        {favoriteDate ? (
+                          <span className="muted journal-date" title={`收藏时间：${favorite.favorited_at}`}>
+                            收藏于 {favoriteDate}
+                          </span>
+                        ) : null}
                       </div>
                     </td>
                     <td className="score-col">

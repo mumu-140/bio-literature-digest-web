@@ -3505,9 +3505,15 @@ tbody tr:hover {
 /* Favorites Filter Grid & Review Components */
 .filter-grid-favorites {
   display: grid;
-  grid-template-columns: minmax(260px, 2fr) minmax(160px, 1fr) minmax(160px, 1fr);
+  grid-template-columns: minmax(240px, 2fr) repeat(3, minmax(150px, 1fr));
   gap: 10px;
   margin-top: 14px;
+}
+
+@media (max-width: 960px) {
+  .filter-grid-favorites {
+    grid-template-columns: 1fr;
+  }
 }
 
 .review-quick-decisions {
