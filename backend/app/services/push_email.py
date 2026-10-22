@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import json
 import subprocess
+import time
 
 from ..config import get_settings
 from ..models import ImportedLiteratureItem, User
@@ -92,15 +93,25 @@ def _send_raw_message(*, to: str, subject: str, body: str) -> None:
         "--body",
         body,
     ]
-    first = _run(command)
-    data = first.get("data") if isinstance(first.get("data"), dict) else {}
-    token = str(data.get("confirmation_token", "")).strip()
-    if not token:
-        raise PushEmailError("邮件服务未返回确认令牌")
-    final = _run([*command, "--confirmation-token", token])
-    final_data = final.get("data") if isinstance(final.get("data"), dict) else {}
-    if not (final.get("queued") or final_data.get("queued")):
-        raise PushEmailError("邮件服务未确认进入发送队列")
+    last_error: PushEmailError | None = None
+    for attempt in range(2):
+        try:
+            first = _run(command)
+            data = first.get("data") if isinstance(first.get("data"), dict) else {}
+            token = str(data.get("confirmation_token", "")).strip()
+            if not token:
+                raise PushEmailError("邮件服务未返回确认令牌")
+            final = _run([*command, "--confirmation-token", token])
+            final_data = final.get("data") if isinstance(final.get("data"), dict) else {}
+            if not (final.get("queued") or final_data.get("queued")):
+                raise PushEmailError("邮件服务未确认进入发送队列")
+            return
+        except PushEmailError as exc:
+            last_error = exc
+            if attempt == 0:
+                time.sleep(1.0)
+    assert last_error is not None
+    raise last_error
 
 
 def _run(command: list[str]) -> dict[str, object]:

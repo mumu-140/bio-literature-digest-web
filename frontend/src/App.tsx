@@ -338,6 +338,43 @@ function ProtectedLayout({
   );
 }
 
+const COMMON_EMAIL_DOMAIN_TYPOS: Record<string, string> = {
+  "qq.ocm": "qq.com",
+  "qq.con": "qq.com",
+  "qq.cm": "qq.com",
+  "qq.co": "qq.com",
+  "qq.cmo": "qq.com",
+  "163.ocm": "163.com",
+  "163.con": "163.com",
+  "163.cm": "163.com",
+  "126.ocm": "126.com",
+  "126.con": "126.com",
+  "gmail.ocm": "gmail.com",
+  "gmail.con": "gmail.com",
+  "gamil.com": "gmail.com",
+  "gmial.com": "gmail.com",
+  "outlook.ocm": "outlook.com",
+  "outlook.con": "outlook.com",
+  "hotmail.ocm": "hotmail.com",
+  "icloud.ocm": "icloud.com",
+  "foxmail.ocm": "foxmail.com",
+};
+
+function getSuggestedEmailForTypo(rawEmail: string): string | null {
+  const trimmed = rawEmail.trim();
+  const atIndex = trimmed.lastIndexOf("@");
+  if (atIndex <= 0) {
+    return null;
+  }
+  const localPart = trimmed.slice(0, atIndex);
+  const domain = trimmed.slice(atIndex + 1).toLowerCase();
+  const fixedDomain = COMMON_EMAIL_DOMAIN_TYPOS[domain];
+  if (fixedDomain) {
+    return `${localPart}@${fixedDomain}`;
+  }
+  return null;
+}
+
 function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -407,13 +444,23 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
     }
   }
 
+  const isSameIssuedEmail = Boolean(
+    issued && issued.email.toLowerCase() === email.trim().toLowerCase(),
+  );
+  const activeCooldown = isSameIssuedEmail ? resendIn : 0;
+  const suggestedEmail = getSuggestedEmailForTypo(email);
+
   async function handleSendOtp() {
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
       setError("请先输入电子邮箱地址");
       return;
     }
-    if (resendIn > 0 || otpSending) {
+    if (suggestedEmail) {
+      setError(`邮箱后缀疑似拼写错误，请检查是否应为 ${suggestedEmail}`);
+      return;
+    }
+    if (activeCooldown > 0 || otpSending) {
       return;
     }
     setOtpSending(true);
@@ -533,9 +580,31 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
                 required
                 placeholder="name@example.com"
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  if (error) {
+                    setError("");
+                  }
+                }}
               />
             </label>
+            {suggestedEmail ? (
+              <div className="notice-banner is-error">
+                <div>
+                  检测到邮箱后缀可能拼写有误，是否应为 <strong>{suggestedEmail}</strong>？
+                </div>
+                <button
+                  type="button"
+                  className="banner-action-btn"
+                  onClick={() => {
+                    setEmail(suggestedEmail);
+                    setError("");
+                  }}
+                >
+                  一键修正为 {suggestedEmail} →
+                </button>
+              </div>
+            ) : null}
             <label>
               <div className="field-label-row">
                 <span className="field-label">登录密码</span>
@@ -621,9 +690,32 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
                 required
                 placeholder="name@example.com"
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  if (error) {
+                    setError("");
+                  }
+                }}
               />
             </label>
+
+            {suggestedEmail ? (
+              <div className="notice-banner is-error">
+                <div>
+                  检测到邮箱后缀可能拼写有误，是否应为 <strong>{suggestedEmail}</strong>？
+                </div>
+                <button
+                  type="button"
+                  className="banner-action-btn"
+                  onClick={() => {
+                    setEmail(suggestedEmail);
+                    setError("");
+                  }}
+                >
+                  一键修正为 {suggestedEmail} →
+                </button>
+              </div>
+            ) : null}
 
             <label>
               <span className="field-label">邮箱验证码</span>
@@ -640,24 +732,30 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
                 <button
                   type="button"
                   className="ghost-button otp-send-btn"
-                  disabled={otpSending || resendIn > 0 || !email.trim()}
+                  disabled={otpSending || activeCooldown > 0 || !email.trim()}
                   onClick={() => void handleSendOtp()}
                 >
                   {otpSending
                     ? "发送中…"
-                    : resendIn > 0
-                      ? `${resendIn}s 后重发`
-                      : issued
+                    : activeCooldown > 0
+                      ? `${activeCooldown}s 后重发`
+                      : isSameIssuedEmail
                         ? "重新获取"
                         : "获取验证码"}
                 </button>
               </div>
             </label>
 
-            {issued ? (
+            {issued && isSameIssuedEmail ? (
               <div className="notice-banner is-success login-otp-notice">
-                验证码已发送至 <strong>{issued.email}</strong>，请在{" "}
-                {Math.max(Math.ceil(issued.expires_in / 60), 1)} 分钟内完成验证。
+                <div>
+                  验证码已由 <strong>ai2science@agent.qq.com</strong> 发送至{" "}
+                  <strong>{issued.email}</strong>，请在{" "}
+                  {Math.max(Math.ceil(issued.expires_in / 60), 1)} 分钟内完成验证。
+                </div>
+                <div className="small-copy" style={{ marginTop: "0.25rem", opacity: 0.9 }}>
+                  若 1 分钟内未收到，请检查邮箱「垃圾箱 / 广告邮件」或核对上方邮箱地址拼写。
+                </div>
                 {issued.dev_code ? (
                   <div className="dev-code-hint">
                     开发模式验证码：<strong>{issued.dev_code}</strong>

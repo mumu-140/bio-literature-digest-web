@@ -99,6 +99,59 @@ def _issue_login_session(
     return LoginResponse(user=build_auth_user(user))
 
 
+COMMON_DOMAIN_TYPOS: dict[str, str] = {
+    "qq.ocm": "qq.com",
+    "qq.con": "qq.com",
+    "qq.cm": "qq.com",
+    "qq.co": "qq.com",
+    "qq.cmo": "qq.com",
+    "163.ocm": "163.com",
+    "163.con": "163.com",
+    "163.cm": "163.com",
+    "163.cmo": "163.com",
+    "126.ocm": "126.com",
+    "126.con": "126.com",
+    "126.cm": "126.com",
+    "gmail.ocm": "gmail.com",
+    "gmail.con": "gmail.com",
+    "gmail.cm": "gmail.com",
+    "gamil.com": "gmail.com",
+    "gmial.com": "gmail.com",
+    "outlook.ocm": "outlook.com",
+    "outlook.con": "outlook.com",
+    "outlok.com": "outlook.com",
+    "hotmail.ocm": "hotmail.com",
+    "hotmail.con": "hotmail.com",
+    "icloud.ocm": "icloud.com",
+    "icloud.con": "icloud.com",
+    "sina.ocm": "sina.com",
+    "sina.con": "sina.com",
+    "foxmail.ocm": "foxmail.com",
+    "foxmail.con": "foxmail.com",
+}
+
+INVALID_TLD_SUFFIXES = (".ocm", ".con", ".cmo", ".comm", ".cnm", ".ed.cn")
+
+
+def _validate_email_domain_typo(email: str) -> None:
+    if "@" not in email:
+        return
+    local_part, domain = email.rsplit("@", 1)
+    domain = domain.strip().lower()
+    if domain in COMMON_DOMAIN_TYPOS:
+        suggested = f"{local_part}@{COMMON_DOMAIN_TYPOS[domain]}"
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"邮箱后缀疑似拼写错误（@{domain}），请检查是否应为 {suggested}",
+        )
+    for bad_suffix in INVALID_TLD_SUFFIXES:
+        if domain.endswith(bad_suffix):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"邮箱域名后缀疑似拼写错误（@{domain}），请核对后再试",
+            )
+
+
 def _hash_otp_code(email: str, code: str) -> str:
     secret = get_settings().session_secret
     return hashlib.sha256(f"{secret}:{email.lower()}:{code}".encode("utf-8")).hexdigest()
@@ -178,6 +231,7 @@ def request_register_otp(
 ) -> LoginOtpIssuedResponse:
     settings = get_settings()
     normalized_email = payload.email.lower()
+    _validate_email_domain_typo(normalized_email)
     purpose = (payload.purpose or "register").strip().lower()
     if purpose not in {"register", "reset"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="无效的验证用途")
@@ -197,6 +251,18 @@ def request_register_otp(
     _enforce_otp_rate_limits(db, email=normalized_email, client_ip=client_ip, now=now, settings=settings)
 
     code = _generate_otp_code(settings.otp_code_length)
+    action_type = "password_reset_otp_requested" if purpose == "reset" else "register_otp_requested"
+    if not settings.otp_dev_echo:
+        try:
+            send_otp_email(
+                email=normalized_email,
+                code=code,
+                ttl_minutes=max(settings.otp_code_ttl_seconds // 60, 1),
+                purpose=purpose,
+            )
+        except PushEmailError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"验证码邮件发送失败：{exc}")
+
     otp = LoginOtpCode(
         email=normalized_email,
         code_hash=_hash_otp_code(normalized_email, code),
@@ -205,7 +271,6 @@ def request_register_otp(
         expires_at=now + timedelta(seconds=settings.otp_code_ttl_seconds),
     )
     db.add(otp)
-    action_type = "password_reset_otp_requested" if purpose == "reset" else "register_otp_requested"
     record_action(
         db,
         action_type=action_type,
@@ -216,26 +281,15 @@ def request_register_otp(
     )
     db.commit()
 
+    if user is not None:
+        write_access_trace(user=user, request=request, event_type=action_type)
     if settings.otp_dev_echo:
-        if user is not None:
-            write_access_trace(user=user, request=request, event_type=action_type)
         return LoginOtpIssuedResponse(
             email=normalized_email,
             expires_in=settings.otp_code_ttl_seconds,
             resend_after=settings.otp_resend_cooldown_seconds,
             dev_code=code,
         )
-    try:
-        send_otp_email(
-            email=normalized_email,
-            code=code,
-            ttl_minutes=max(settings.otp_code_ttl_seconds // 60, 1),
-            purpose=purpose,
-        )
-    except PushEmailError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"验证码邮件发送失败：{exc}")
-    if user is not None:
-        write_access_trace(user=user, request=request, event_type=action_type)
     return LoginOtpIssuedResponse(
         email=normalized_email,
         expires_in=settings.otp_code_ttl_seconds,
@@ -256,6 +310,7 @@ def register_with_otp(
 ) -> LoginResponse:
     settings = get_settings()
     normalized_email = payload.email.lower()
+    _validate_email_domain_typo(normalized_email)
     purpose = (payload.purpose or "register").strip().lower()
     if purpose not in {"register", "reset"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="无效的验证用途")
@@ -356,6 +411,7 @@ def request_login_otp(
     if not settings.otp_login_enabled:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="OTP login is disabled")
     normalized_email = payload.email.lower()
+    _validate_email_domain_typo(normalized_email)
     client_ip = request.client.host if request.client else ""
     now = datetime.utcnow()
 
@@ -372,6 +428,17 @@ def request_login_otp(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
 
     code = _generate_otp_code(settings.otp_code_length)
+    if not settings.otp_dev_echo:
+        try:
+            send_otp_email(
+                email=user.email,
+                code=code,
+                ttl_minutes=max(settings.otp_code_ttl_seconds // 60, 1),
+                purpose="login",
+            )
+        except PushEmailError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"验证码邮件发送失败：{exc}")
+
     otp = LoginOtpCode(
         email=normalized_email,
         code_hash=_hash_otp_code(normalized_email, code),
@@ -389,24 +456,14 @@ def request_login_otp(
         detail={"email": user.email},
     )
     db.commit()
+    write_access_trace(user=user, request=request, event_type="login_otp_requested")
     if settings.otp_dev_echo:
-        write_access_trace(user=user, request=request, event_type="login_otp_requested")
         return LoginOtpIssuedResponse(
             email=user.email,
             expires_in=settings.otp_code_ttl_seconds,
             resend_after=settings.otp_resend_cooldown_seconds,
             dev_code=code,
         )
-    try:
-        send_otp_email(
-            email=user.email,
-            code=code,
-            ttl_minutes=max(settings.otp_code_ttl_seconds // 60, 1),
-            purpose="login",
-        )
-    except PushEmailError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"验证码邮件发送失败：{exc}")
-    write_access_trace(user=user, request=request, event_type="login_otp_requested")
     return LoginOtpIssuedResponse(
         email=user.email,
         expires_in=settings.otp_code_ttl_seconds,
@@ -488,6 +545,7 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
     """
     settings = get_settings()
     normalized_email = payload.email.lower()
+    _validate_email_domain_typo(normalized_email)
     user = db.scalar(select(User).where(User.email == normalized_email))
     raw_password = payload.password or ""
 
@@ -512,14 +570,14 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="账号或密码错误，若尚未注册请先切换至「邮箱注册」完成注册",
+            detail="账号或密码错误，若尚未注册请先切换至「注册 / 首次设密」完成注册",
         )
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="该账户已被停用，请联系管理员")
     if not has_usable_password(user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="该账户尚未设置登录密码，请切换至「邮箱注册」通过邮箱验证设置密码",
+            detail="该账户尚未设置登录密码，请切换至「注册 / 首次设密」通过邮箱验证设置密码",
         )
     if not verify_password(raw_password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="账号或密码错误")

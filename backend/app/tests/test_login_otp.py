@@ -256,6 +256,40 @@ class LoginOtpTestCase(unittest.TestCase):
             )
             self.assertEqual(verify.status_code, 403)
 
+    def test_domain_typo_is_rejected_with_helpful_suggestion(self) -> None:
+        with TestClient(self.app_factory()) as client:
+            typo_req = client.post(
+                "/api/auth/register/otp/request",
+                json={"email": "1404064349@qq.ocm", "purpose": "register"},
+            )
+            self.assertEqual(typo_req.status_code, 400)
+            self.assertIn("1404064349@qq.com", typo_req.json()["detail"])
+
+    def test_failed_email_send_does_not_lock_cooldown(self) -> None:
+        from unittest.mock import patch
+        from app.services.push_email import PushEmailError
+
+        os.environ["OTP_DEV_ECHO"] = "false"
+        reset_settings_cache()
+        with TestClient(self.app_factory()) as client:
+            with patch(
+                "app.api.auth.send_otp_email",
+                side_effect=PushEmailError("simulated transient error"),
+            ):
+                failed = client.post(
+                    "/api/auth/register/otp/request",
+                    json={"email": "retryuser@example.com", "purpose": "register"},
+                )
+                self.assertEqual(failed.status_code, 502)
+
+            with patch("app.api.auth.send_otp_email") as mocked_send:
+                retried = client.post(
+                    "/api/auth/register/otp/request",
+                    json={"email": "retryuser@example.com", "purpose": "register"},
+                )
+                self.assertEqual(retried.status_code, 202)
+                mocked_send.assert_called_once()
+
 
 def hashlib_sha256(value: str) -> str:
     import hashlib
