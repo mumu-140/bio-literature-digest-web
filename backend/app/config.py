@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     otp_per_email_daily_limit: int = Field(default=15, ge=1, le=500)
     otp_per_ip_hourly_limit: int = Field(default=20, ge=1, le=1000)
     otp_dev_echo: bool = False
+    smtp_fallback_host: str = "smtp.qq.com"
+    smtp_fallback_port: int = 465
+    smtp_fallback_username: str = ""
+    smtp_fallback_password: str = ""
+    smtp_fallback_from_name: str = "Bio Literature Digest"
 
 
 def _resolve_path(raw_value: str, *, base_dir: Path) -> str:

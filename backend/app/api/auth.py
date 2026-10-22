@@ -261,7 +261,7 @@ def request_register_otp(
                 purpose=purpose,
             )
         except PushEmailError as exc:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"验证码邮件发送失败：{exc}")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"验证码邮件发送失败：{exc}")
 
     otp = LoginOtpCode(
         email=normalized_email,
@@ -437,7 +437,7 @@ def request_login_otp(
                 purpose="login",
             )
         except PushEmailError as exc:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"验证码邮件发送失败：{exc}")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"验证码邮件发送失败：{exc}")
 
     otp = LoginOtpCode(
         email=normalized_email,

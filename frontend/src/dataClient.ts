@@ -191,14 +191,18 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const contentType = response.headers.get("content-type") || "";
   const payload = contentType.includes("application/json") ? await response.json() : await response.text();
   if (!response.ok) {
-    throw new Error(extractErrorMessage(payload));
+    throw new Error(extractErrorMessage(payload, response.status));
   }
   return payload as T;
 }
 
-function extractErrorMessage(payload: unknown): string {
+function extractErrorMessage(payload: unknown, status?: number): string {
   if (typeof payload === "string") {
-    return payload;
+    const trimmed = payload.trim();
+    if (trimmed.startsWith("<!DOCTYPE") || /<html[\s>]/i.test(trimmed)) {
+      return `服务网关响应超时或暂时繁忙（HTTP ${status ?? 502}），请稍后重试`;
+    }
+    return trimmed || `请求失败（HTTP ${status ?? 500}）`;
   }
   if (!payload || typeof payload !== "object") {
     return "Request failed";

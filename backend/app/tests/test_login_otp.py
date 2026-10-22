@@ -280,7 +280,8 @@ class LoginOtpTestCase(unittest.TestCase):
                     "/api/auth/register/otp/request",
                     json={"email": "retryuser@example.com", "purpose": "register"},
                 )
-                self.assertEqual(failed.status_code, 502)
+                self.assertEqual(failed.status_code, 400)
+                self.assertIn("验证码邮件发送失败", failed.json()["detail"])
 
             with patch("app.api.auth.send_otp_email") as mocked_send:
                 retried = client.post(
@@ -289,6 +290,29 @@ class LoginOtpTestCase(unittest.TestCase):
                 )
                 self.assertEqual(retried.status_code, 202)
                 mocked_send.assert_called_once()
+
+    def test_smtp_fallback_when_agently_cli_fails(self) -> None:
+        from unittest.mock import MagicMock, patch
+        from app.services.push_email import PushEmailError, send_otp_email
+
+        os.environ["SMTP_FALLBACK_USERNAME"] = "fallback@qq.com"
+        os.environ["SMTP_FALLBACK_PASSWORD"] = "secret-app-pass"
+        reset_settings_cache()
+        try:
+            with (
+                patch("app.services.push_email._run", side_effect=PushEmailError("agently down")),
+                patch("app.services.push_email.time.sleep"),
+                patch("app.services.push_email.smtplib.SMTP_SSL") as mock_smtp_cls,
+            ):
+                smtp_instance = MagicMock()
+                mock_smtp_cls.return_value.__enter__.return_value = smtp_instance
+                send_otp_email(email="target@qq.com", code="654321", ttl_minutes=10, purpose="register")
+                smtp_instance.login.assert_called_once_with("fallback@qq.com", "secret-app-pass")
+                smtp_instance.send_message.assert_called_once()
+        finally:
+            os.environ.pop("SMTP_FALLBACK_USERNAME", None)
+            os.environ.pop("SMTP_FALLBACK_PASSWORD", None)
+            reset_settings_cache()
 
 
 def hashlib_sha256(value: str) -> str:

@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import html
 import json
+import os
+import re
+import smtplib
 import subprocess
 import time
+from email.message import EmailMessage
 
 from ..config import get_settings
 from ..models import ImportedLiteratureItem, User
@@ -108,16 +112,52 @@ def _send_raw_message(*, to: str, subject: str, body: str) -> None:
             return
         except PushEmailError as exc:
             last_error = exc
+            print(f"[push_email] agently-cli attempt {attempt + 1} failed for {to}: {exc}", flush=True)
             if attempt == 0:
-                time.sleep(1.0)
+                time.sleep(0.8)
+
+    if _send_via_smtp_fallback(to=to, subject=subject, body=body):
+        return
     assert last_error is not None
     raise last_error
+
+
+def _send_via_smtp_fallback(*, to: str, subject: str, body: str) -> bool:
+    if to.strip().lower().endswith(("@example.com", "@example.org", "@example.net")):
+        return False
+    settings = get_settings()
+    username = (settings.smtp_fallback_username or os.environ.get("SMTP_FALLBACK_USERNAME") or "").strip()
+    password = (
+        settings.smtp_fallback_password
+        or os.environ.get("SMTP_FALLBACK_PASSWORD")
+        or os.environ.get("QQ_MAIL_APP_PASSWORD")
+        or ""
+    ).strip()
+    if not username or not password:
+        return False
+
+    plain_text = re.sub(r"<[^>]+>", "", body).strip() or subject
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = f"{settings.smtp_fallback_from_name} <{username}>"
+    msg["To"] = to
+    msg.set_content(plain_text)
+    msg.add_alternative(body, subtype="html")
+    try:
+        with smtplib.SMTP_SSL(settings.smtp_fallback_host, settings.smtp_fallback_port, timeout=12) as server:
+            server.login(username, password)
+            server.send_message(msg)
+        print(f"[push_email] SMTP fallback delivered email to {to} via {username}", flush=True)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"[push_email] SMTP fallback failed for {to}: {exc}", flush=True)
+        return False
 
 
 def _run(command: list[str]) -> dict[str, object]:
     try:
         completed = subprocess.run(
-            command, text=True, capture_output=True, check=False, timeout=30,
+            command, text=True, capture_output=True, check=False, timeout=12,
         )
     except subprocess.TimeoutExpired as exc:
         raise PushEmailError("邮件服务调用超时") from exc
