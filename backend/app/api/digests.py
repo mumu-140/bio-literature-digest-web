@@ -103,7 +103,11 @@ def list_papers(
     if category:
         filters.append(ImportedLiteratureItem.category == category)
     if journal:
-        filters.append(ImportedLiteratureItem.journal == journal)
+        journal_list = [j.strip() for j in journal.split(",") if j.strip()]
+        if len(journal_list) > 1:
+            filters.append(ImportedLiteratureItem.journal.in_(journal_list))
+        elif journal_list:
+            filters.append(ImportedLiteratureItem.journal == journal_list[0])
     if interest_level:
         filters.append(ImportedLiteratureItem.interest_level == interest_level)
     if q:
@@ -134,6 +138,7 @@ def get_paper_library_overview(
     q: Optional[str] = None,
     category: Optional[str] = None,
     journal: Optional[str] = None,
+    journals: list[str] = Query(default=[]),
     tag: Optional[str] = None,
     publish_date: Optional[str] = None,
     sort: str = Query(default="publish_date_desc"),
@@ -142,6 +147,7 @@ def get_paper_library_overview(
     db: Session = Depends(get_db),
 ) -> PaperLibraryOverview:
     response.headers["Cache-Control"] = "private, max-age=120, stale-while-revalidate=600"
+    all_journals = tuple(journals) if journals else (tuple(journal.split(",")) if journal else ())
     return build_paper_library_overview(
         db,
         current_user.id,
@@ -149,6 +155,7 @@ def get_paper_library_overview(
             query=q or "",
             category=category or "",
             journal=journal or "",
+            journals=all_journals,
             tag=tag or "",
             publish_date=publish_date or "",
             sort=normalize_library_sort(sort),
@@ -164,6 +171,7 @@ def get_paper_library_group(
     q: Optional[str] = None,
     category: Optional[str] = None,
     journal: Optional[str] = None,
+    journals: list[str] = Query(default=[]),
     tag: Optional[str] = None,
     sort: str = Query(default="publish_date_desc"),
     page: int = Query(default=1, ge=1),
@@ -172,6 +180,7 @@ def get_paper_library_group(
     db: Session = Depends(get_db),
 ) -> PaperLibraryGroup:
     response.headers["Cache-Control"] = "private, max-age=300, stale-while-revalidate=1800"
+    all_journals = tuple(journals) if journals else (tuple(journal.split(",")) if journal else ())
     return load_paper_library_group(
         db,
         current_user.id,
@@ -179,6 +188,7 @@ def get_paper_library_group(
             query=q or "",
             category=category or "",
             journal=journal or "",
+            journals=all_journals,
             tag=tag or "",
             publish_date="",
             sort=normalize_library_sort(sort),

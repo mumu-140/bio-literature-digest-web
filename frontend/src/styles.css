@@ -1688,6 +1688,281 @@ tbody tr:hover {
   color: rgba(102, 113, 100, 0.6);
 }
 
+/* ─── Journal Multi-Select Dropdown ─── */
+
+.journal-multi-select {
+  position: relative;
+  width: 100%;
+}
+
+.journal-select-trigger {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 253, 248, 0.97);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.journal-select-trigger:focus,
+.journal-select-trigger:hover {
+  border-color: rgba(23, 63, 52, 0.36);
+}
+
+.journal-select-trigger.has-selection {
+  border-color: var(--accent);
+  background: rgba(23, 63, 52, 0.04);
+  font-weight: 500;
+}
+
+.journal-trigger-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.journal-trigger-arrow {
+  color: var(--muted);
+  font-size: 14px;
+  transition: transform var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.journal-trigger-arrow.open {
+  transform: rotate(180deg);
+}
+
+.journal-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 330px;
+  max-width: min(360px, 92vw);
+  background: var(--panel-strong, #fffaf1);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 14px 34px rgba(63, 48, 27, 0.16), 0 4px 12px rgba(0, 0, 0, 0.08);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: popoverDrop 160ms ease-out;
+}
+
+@keyframes popoverDrop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.journal-popover-header {
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-alt);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.journal-popover-search {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  font-size: 12px;
+  color: var(--ink);
+  outline: none;
+}
+
+.journal-popover-search:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(23, 63, 52, 0.1);
+}
+
+.journal-popover-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.journal-popover-btn {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.journal-popover-btn:hover {
+  background: rgba(23, 63, 52, 0.08);
+  border-color: rgba(23, 63, 52, 0.3);
+}
+
+.journal-popover-btn.highlight-cns {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border-color: rgba(23, 63, 52, 0.25);
+  font-weight: 600;
+}
+
+.journal-popover-btn.highlight-cns:hover {
+  background: rgba(201, 226, 214, 1);
+}
+
+.journal-popover-scroll {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.journal-section {
+  padding: 4px 0;
+}
+
+.journal-section + .journal-section {
+  border-top: 1px solid rgba(118, 102, 73, 0.1);
+}
+
+.journal-section-title {
+  padding: 6px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.journal-section-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(118, 102, 73, 0.12);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.journal-section-toggle {
+  width: 100%;
+  padding: 7px 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: left;
+  transition: background var(--transition-fast);
+}
+
+.journal-section-toggle:hover {
+  background: rgba(23, 63, 52, 0.05);
+}
+
+.preprint-toggle-arrow {
+  font-size: 10px;
+  color: var(--muted);
+  width: 12px;
+}
+
+.preprint-toggle-title {
+  flex: 1;
+}
+
+.preprint-selected-indicator {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(168, 107, 38, 0.15);
+  color: var(--warm);
+  font-weight: 600;
+}
+
+.journal-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.journal-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  user-select: none;
+}
+
+.journal-item:hover {
+  background: rgba(23, 63, 52, 0.06);
+}
+
+.journal-item.selected {
+  background: rgba(23, 63, 52, 0.08);
+  font-weight: 500;
+}
+
+.journal-item input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.journal-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preprint-item {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.preprint-item.selected {
+  color: var(--ink);
+  font-style: normal;
+}
+
+.journal-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 /* ─── Toast slide-in animation ─── */
 
 @keyframes toastSlideIn {

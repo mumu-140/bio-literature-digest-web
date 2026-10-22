@@ -356,6 +356,25 @@ class PaperLibraryApiTest(unittest.TestCase):
             self.assertEqual(group_payload["items"][0]["journal"], "Nature")
             self.assertEqual(group_payload["items"][0]["title_en"], "Paper A")
 
+            # Test multi-journal filter
+            multi_response = client.get("/api/papers/library?journal=Nature,Cell&initial_group_count=3")
+            self.assertEqual(multi_response.status_code, 200)
+            multi_payload = multi_response.json()
+            self.assertEqual(multi_payload["total_papers"], 3)  # Nature (1) + Cell (2)
+            all_multi_items = [
+                item
+                for group in multi_payload["loaded_groups"]
+                for item in group["items"]
+            ]
+            self.assertTrue(all(item["journal"] in ("Nature", "Cell") for item in all_multi_items))
+
+            # Test multi-journal filter in group endpoint
+            group_multi_response = client.get("/api/papers/library/groups/2026-04-09?journal=Nature,Science")
+            self.assertEqual(group_multi_response.status_code, 200)
+            group_multi_payload = group_multi_response.json()
+            self.assertEqual(group_multi_payload["paper_count"], 2)  # Paper A (Nature) + Paper E (Science)
+            self.assertTrue(all(item["journal"] in ("Nature", "Science") for item in group_multi_payload["items"]))
+
 
 if __name__ == "__main__":
     unittest.main()

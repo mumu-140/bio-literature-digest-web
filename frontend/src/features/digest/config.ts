@@ -3,6 +3,38 @@ export const DIGEST_TOAST_DURATION_MS = 2600;
 
 export const DIGEST_FLAGSHIP_JOURNAL_ORDER = ["Cell", "Nature", "Science"] as const;
 
+export const CELL_PRESS_ADDITIONAL_JOURNALS = [
+  "current biology",
+  "molecular plant",
+  "plant communications",
+  "developmental cell",
+  "trends in plant science",
+] as const;
+
+export function isPreprintJournal(name: string): boolean {
+  const lower = (name || "").trim().toLowerCase();
+  return (
+    lower.includes("biorxiv") ||
+    lower.includes("medrxiv") ||
+    lower.includes("arxiv") ||
+    lower.includes("chemrxiv") ||
+    lower.includes("preprint")
+  );
+}
+
+export function isCnsJournal(name: string): boolean {
+  const lower = (name || "").trim().toLowerCase();
+  if (isPreprintJournal(lower)) return false;
+  if (
+    lower.startsWith("cell") ||
+    lower.startsWith("nature") ||
+    lower.startsWith("science")
+  ) {
+    return true;
+  }
+  return CELL_PRESS_ADDITIONAL_JOURNALS.some((j) => lower === j);
+}
+
 export const DIGEST_JOURNAL_MARKER_OVERRIDES: Record<string, string> = {
   cell: "CEL",
   nature: "NAT",

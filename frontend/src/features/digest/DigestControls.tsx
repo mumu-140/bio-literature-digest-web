@@ -1,8 +1,9 @@
-import { useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AuthUser, DigestSortKey } from "../../dataClient";
 import { MetricTile, UserMultiSelect } from "../shared/WorkbenchUi";
 import { DigestController } from "./useDigestLibrary";
 import { MAX_DEERFLOW_DISCUSSION_PAPERS } from "./deerflowDiscussion";
+import { isCnsJournal, isPreprintJournal } from "./config";
 import {
   IconArrowDownTray,
   IconChatBubble,
@@ -99,15 +100,267 @@ function DigestMetrics({ digest }: { digest: DigestController }) {
   );
 }
 
+function JournalMultiSelect({
+  options,
+  value,
+  onChange,
+}: {
+  options: string[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [preprintsOpen, setPreprintsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const selectedList = useMemo(
+    () => (value ? value.split(",").map((s) => s.trim()).filter(Boolean) : []),
+    [value]
+  );
+  const selectedSet = useMemo(() => new Set(selectedList), [selectedList]);
+
+  // Split options into CNS, Other, Preprints
+  const { cnsOptions, otherOptions, preprintOptions } = useMemo(() => {
+    const cns: string[] = [];
+    const other: string[] = [];
+    const preprints: string[] = [];
+    for (const opt of options) {
+      if (isPreprintJournal(opt)) {
+        preprints.push(opt);
+      } else if (isCnsJournal(opt)) {
+        cns.push(opt);
+      } else {
+        other.push(opt);
+      }
+    }
+    return { cnsOptions: cns, otherOptions: other, preprintOptions: preprints };
+  }, [options]);
+
+  // Click outside and escape key listener
+  useEffect(() => {
+    if (!isOpen) return;
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
+  const toggleJournal = (journal: string) => {
+    if (selectedSet.has(journal)) {
+      const next = selectedList.filter((j) => j !== journal);
+      onChange(next.join(","));
+    } else {
+      onChange([...selectedList, journal].join(","));
+    }
+  };
+
+  const handleSelectAll = () => {
+    onChange(options.join(","));
+  };
+
+  const handleSelectCNS = () => {
+    onChange(cnsOptions.join(","));
+  };
+
+  const handleClear = () => {
+    onChange("");
+  };
+
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const filterList = (list: string[]) => {
+    if (!normalizedQuery) return list;
+    return list.filter((item) => item.toLowerCase().includes(normalizedQuery));
+  };
+
+  const visibleCns = filterList(cnsOptions);
+  const visibleOther = filterList(otherOptions);
+  const visiblePreprints = filterList(preprintOptions);
+  const selectedPreprintCount = preprintOptions.filter((j) => selectedSet.has(j)).length;
+
+  let triggerLabel = `全部期刊 (${options.length})`;
+  if (selectedList.length === 1) {
+    triggerLabel = selectedList[0];
+  } else if (selectedList.length > 1) {
+    triggerLabel = `已选 ${selectedList.length} 本期刊`;
+  }
+
+  return (
+    <div className="journal-multi-select" ref={containerRef}>
+      <button
+        type="button"
+        className={`journal-select-trigger ${selectedList.length > 0 ? "has-selection" : ""}`}
+        onClick={() => setIsOpen((prev) => !prev)}
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+        title={selectedList.length > 0 ? selectedList.join(", ") : "全部期刊"}
+      >
+        <span className="journal-trigger-text">{triggerLabel}</span>
+        <span className={`journal-trigger-arrow ${isOpen ? "open" : ""}`}>▾</span>
+      </button>
+
+      {isOpen ? (
+        <div className="journal-popover" role="dialog" aria-label="期刊多选菜单">
+          <div className="journal-popover-header">
+            <input
+              type="text"
+              className="journal-popover-search"
+              placeholder="搜索期刊…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              autoFocus
+            />
+            <div className="journal-popover-actions">
+              <button
+                type="button"
+                className="journal-popover-btn"
+                onClick={handleSelectAll}
+                title="选择全部期刊"
+              >
+                全选
+              </button>
+              <button
+                type="button"
+                className="journal-popover-btn highlight-cns"
+                onClick={handleSelectCNS}
+                title="仅选择 CNS 顶刊与子刊"
+              >
+                仅 CNS
+              </button>
+              <button
+                type="button"
+                className="journal-popover-btn"
+                onClick={handleClear}
+                title="清空当前已选"
+              >
+                清空
+              </button>
+            </div>
+          </div>
+
+          <div className="journal-popover-scroll">
+            {/* Section 1: CNS Journals (Flagship + Family) - CNS 优先显示 */}
+            {visibleCns.length > 0 ? (
+              <div className="journal-section">
+                <div className="journal-section-title">
+                  <span>CNS 核心期刊</span>
+                  <span className="journal-section-badge">{visibleCns.length}</span>
+                </div>
+                <div className="journal-list">
+                  {visibleCns.map((journal) => {
+                    const checked = selectedSet.has(journal);
+                    return (
+                      <label key={journal} className={`journal-item ${checked ? "selected" : ""}`}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleJournal(journal)}
+                        />
+                        <span className="journal-item-name">{journal}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Section 2: Other Peer-Reviewed Journals */}
+            {visibleOther.length > 0 ? (
+              <div className="journal-section">
+                <div className="journal-section-title">
+                  <span>其他同行评审期刊</span>
+                  <span className="journal-section-badge">{visibleOther.length}</span>
+                </div>
+                <div className="journal-list">
+                  {visibleOther.map((journal) => {
+                    const checked = selectedSet.has(journal);
+                    return (
+                      <label key={journal} className={`journal-item ${checked ? "selected" : ""}`}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleJournal(journal)}
+                        />
+                        <span className="journal-item-name">{journal}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Section 3: Preprints (at the bottom, collapsed by default!) */}
+            {visiblePreprints.length > 0 ? (
+              <div className="journal-section preprints-section">
+                <button
+                  type="button"
+                  className="journal-section-toggle"
+                  onClick={() => setPreprintsOpen((prev) => !prev)}
+                  title={preprintsOpen ? "点击折叠预印本" : "点击展开预印本"}
+                >
+                  <span className="preprint-toggle-arrow">{preprintsOpen ? "▼" : "▶"}</span>
+                  <span className="preprint-toggle-title">预印本</span>
+                  <span className="journal-section-badge">{visiblePreprints.length}</span>
+                  {selectedPreprintCount > 0 ? (
+                    <span className="preprint-selected-indicator">
+                      已选 {selectedPreprintCount}
+                    </span>
+                  ) : null}
+                </button>
+                {preprintsOpen ? (
+                  <div className="journal-list preprints-list">
+                    {visiblePreprints.map((journal) => {
+                      const checked = selectedSet.has(journal);
+                      return (
+                        <label key={journal} className={`journal-item preprint-item ${checked ? "selected" : ""}`}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleJournal(journal)}
+                          />
+                          <span className="journal-item-name">{journal}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {visibleCns.length === 0 && visibleOther.length === 0 && visiblePreprints.length === 0 ? (
+              <div className="journal-empty">无匹配期刊</div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ActiveFilterPills({ digest }: { digest: DigestController }) {
   const { filters, setFilters } = digest;
   const hasQuery = Boolean(filters.query.trim());
   const hasDate = Boolean(filters.publishDate);
   const hasCategory = Boolean(filters.category);
-  const hasJournal = Boolean(filters.journal);
+  const selectedJournals = useMemo(
+    () => (filters.journal ? filters.journal.split(",").map((s) => s.trim()).filter(Boolean) : []),
+    [filters.journal]
+  );
   const hasTag = Boolean(filters.tag);
 
-  if (!hasQuery && !hasDate && !hasCategory && !hasJournal && !hasTag) {
+  if (!hasQuery && !hasDate && !hasCategory && selectedJournals.length === 0 && !hasTag) {
     return null;
   }
 
@@ -163,20 +416,23 @@ function ActiveFilterPills({ digest }: { digest: DigestController }) {
           </span>
         ) : null}
 
-        {hasJournal ? (
-          <span className="filter-pill">
-            <span className="filter-pill-text">期刊: {filters.journal}</span>
+        {selectedJournals.map((journal) => (
+          <span key={journal} className="filter-pill">
+            <span className="filter-pill-text">期刊: {journal}</span>
             <button
               type="button"
               className="filter-pill-remove"
-              onClick={() => setFilters((prev) => ({ ...prev, journal: "" }))}
-              title="清除期刊筛选"
-              aria-label="清除期刊筛选"
+              onClick={() => {
+                const next = selectedJournals.filter((j) => j !== journal);
+                setFilters((prev) => ({ ...prev, journal: next.join(",") }));
+              }}
+              title={`移除 ${journal}`}
+              aria-label={`移除 ${journal}`}
             >
               <IconXMark size={12} />
             </button>
           </span>
-        ) : null}
+        ))}
 
         {hasTag ? (
           <span className="filter-pill">
@@ -271,21 +527,11 @@ function FilterControls({ digest }: { digest: DigestController }) {
         ))}
       </select>
 
-      <select
-        aria-label="期刊"
-        name="journal"
+      <JournalMultiSelect
+        options={digest.journalOptions}
         value={digest.filters.journal}
-        onChange={(event) =>
-          digest.setFilters((current) => ({ ...current, journal: event.target.value }))
-        }
-      >
-        <option value="">全部期刊 ({digest.journalOptions.length})</option>
-        {digest.journalOptions.map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
+        onChange={(val) => digest.setFilters((current) => ({ ...current, journal: val }))}
+      />
 
       <select
         aria-label="标签"

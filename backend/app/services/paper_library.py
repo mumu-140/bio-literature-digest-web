@@ -19,6 +19,40 @@ SUPPORTED_LIBRARY_SORTS = {"publish_date_desc", "publish_date_asc"}
 UNKNOWN_PUBLISH_DATE = "unknown"
 FLAGSHIP_JOURNAL_ORDER = ("cell", "nature", "science")
 
+CELL_PRESS_ADDITIONAL_JOURNALS = {
+    "current biology",
+    "molecular plant",
+    "plant communications",
+    "developmental cell",
+    "trends in plant science",
+}
+
+
+def is_preprint_journal(name: str) -> bool:
+    cleaned = (name or "").strip().lower()
+    return any(p in cleaned for p in ("biorxiv", "medrxiv", "arxiv", "chemrxiv", "preprint"))
+
+
+def is_cns_journal(name: str) -> bool:
+    cleaned = (name or "").strip().lower()
+    if is_preprint_journal(cleaned):
+        return False
+    if any(cleaned.startswith(prefix) for prefix in ("cell", "nature", "science")):
+        return True
+    return cleaned in CELL_PRESS_ADDITIONAL_JOURNALS
+
+
+def journal_sort_key(name: str) -> tuple[int, int, str]:
+    cleaned = (name or "").strip().lower()
+    if is_preprint_journal(name):
+        return (2, 0, name)
+    if cleaned in FLAGSHIP_JOURNAL_ORDER:
+        return (0, FLAGSHIP_JOURNAL_ORDER.index(cleaned), name)
+    if is_cns_journal(name):
+        return (0, 3, name)
+    return (1, 0, name)
+
+
 _DATE_PREFIX_PATTERN = re.compile(r"(\d{4}-\d{2}-\d{2})")
 
 
@@ -27,9 +61,21 @@ class PaperLibraryFilters:
     query: str = ""
     category: str = ""
     journal: str = ""
+    journals: tuple[str, ...] = ()
     tag: str = ""
     publish_date: str = ""
     sort: str = DEFAULT_LIBRARY_SORT
+
+
+def normalize_journals(journal: str = "", journals: tuple[str, ...] = ()) -> tuple[str, ...]:
+    collected: list[str] = []
+    source = list(journals) if journals else ([journal] if journal else [])
+    for item in source:
+        for sub in (item or "").split(","):
+            cleaned = sub.strip()
+            if cleaned and cleaned not in collected:
+                collected.append(cleaned)
+    return tuple(collected)
 
 
 def normalize_library_sort(value: Optional[str]) -> str:
@@ -82,10 +128,12 @@ def build_paper_library_overview(
     *,
     initial_group_count: int = 3,
 ) -> PaperLibraryOverview:
+    normalized_journals = normalize_journals(filters.journal, filters.journals)
     normalized_filters = PaperLibraryFilters(
         query=filters.query.strip(),
         category=filters.category.strip(),
-        journal=filters.journal.strip(),
+        journal=",".join(normalized_journals) if normalized_journals else "",
+        journals=normalized_journals,
         tag=filters.tag.strip(),
         publish_date=_normalize_requested_publish_date(filters.publish_date),
         sort=normalize_library_sort(filters.sort),
@@ -148,10 +196,12 @@ def load_paper_library_group(
     page_size: int = 50,
 ) -> PaperLibraryGroup:
     requested_publish_date = _normalize_requested_publish_date(publish_date)
+    normalized_journals = normalize_journals(filters.journal, filters.journals)
     normalized_filters = PaperLibraryFilters(
         query=filters.query.strip(),
         category=filters.category.strip(),
-        journal=filters.journal.strip(),
+        journal=",".join(normalized_journals) if normalized_journals else "",
+        journals=normalized_journals,
         tag=filters.tag.strip(),
         publish_date=requested_publish_date,
         sort=normalize_library_sort(filters.sort),
@@ -213,7 +263,7 @@ def collect_paper_library_filter_options(db: Session) -> dict[str, list[str]]:
         "available_publish_dates": order_publish_dates(publish_dates, DEFAULT_LIBRARY_SORT),
         "available_categories": sorted(categories),
         "available_tags": sorted(tags),
-        "available_journals": sorted(journals),
+        "available_journals": sorted(journals, key=journal_sort_key),
     }
 
 
@@ -230,7 +280,9 @@ def load_paper_library_papers(db: Session, user_id: int, filters: PaperLibraryFi
     )
     if filters.category:
         statement = statement.where(ImportedLiteratureItem.category == filters.category)
-    if filters.journal:
+    if filters.journals:
+        statement = statement.where(ImportedLiteratureItem.journal.in_(filters.journals))
+    elif filters.journal:
         statement = statement.where(ImportedLiteratureItem.journal == filters.journal)
     if filters.query:
         statement = _apply_text_filter(db, statement, filters.query)
@@ -265,7 +317,9 @@ def load_paper_library_index(db: Session, filters: PaperLibraryFilters) -> list[
     )
     if filters.category:
         statement = statement.where(ImportedLiteratureItem.category == filters.category)
-    if filters.journal:
+    if filters.journals:
+        statement = statement.where(ImportedLiteratureItem.journal.in_(filters.journals))
+    elif filters.journal:
         statement = statement.where(ImportedLiteratureItem.journal == filters.journal)
     if filters.query:
         statement = _apply_text_filter(db, statement, filters.query)
@@ -290,7 +344,7 @@ def load_paper_library_index(db: Session, filters: PaperLibraryFilters) -> list[
 
 
 def _can_use_materialized_stats(filters: PaperLibraryFilters) -> bool:
-    return not any((filters.query, filters.category, filters.journal, filters.tag, filters.publish_date))
+    return not any((filters.query, filters.category, filters.journal, filters.journals, filters.tag, filters.publish_date))
 
 
 def _apply_text_filter(db: Session, statement, query: str):
