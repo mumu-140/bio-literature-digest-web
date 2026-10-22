@@ -15,7 +15,7 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    pass
+    password: Optional[str] = None
 
 
 class UserUpdate(BaseModel):
@@ -24,6 +24,7 @@ class UserUpdate(BaseModel):
     user_group: Optional[str] = None
     owner_admin_user_id: Optional[int] = None
     is_active: Optional[bool] = None
+    password: Optional[str] = None
 
 
 class UserRead(UserBase):
@@ -52,7 +53,21 @@ class SubscriptionEmailRead(BaseModel):
 
 class LoginRequest(BaseModel):
     email: EmailStr
+    password: str = ""
     name: str = ""
+
+
+class RegisterOtpRequest(BaseModel):
+    email: EmailStr
+    purpose: str = "register"
+
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=8)
+    password: str = Field(min_length=6, max_length=128)
+    name: str = Field(default="", max_length=255)
+    purpose: str = "register"
 
 
 class LoginOtpRequest(BaseModel):

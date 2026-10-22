@@ -1447,8 +1447,13 @@ tbody tr:hover {
 }
 
 .login-panel .stack {
-  margin-top: 20px;
+  margin-top: 18px;
   gap: 14px;
+}
+
+.login-panel label {
+  display: grid;
+  gap: 6px;
 }
 
 .login-panel .primary-button {
@@ -1456,12 +1461,195 @@ tbody tr:hover {
   padding: 12px 20px;
   font-size: 15px;
   border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .login-panel input {
+  width: 100%;
   padding: 12px 14px;
   border-radius: 14px;
   font-size: 15px;
+  border: 1px solid rgba(118, 102, 73, 0.22);
+  background: rgba(255, 255, 255, 0.78);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.login-panel input:focus {
+  border-color: rgba(23, 63, 52, 0.42);
+  box-shadow: 0 0 0 3px rgba(23, 63, 52, 0.08);
+}
+
+.login-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  margin-top: 22px;
+  padding: 5px;
+  border-radius: 14px;
+  background: rgba(244, 234, 216, 0.75);
+  border: 1px solid rgba(118, 102, 73, 0.14);
+}
+
+.login-mode-tab {
+  padding: 10px 14px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.login-mode-tab:hover {
+  color: var(--ink);
+}
+
+.login-mode-tab.is-active {
+  background: var(--panel-strong);
+  color: var(--accent);
+  box-shadow: 0 2px 8px rgba(63, 48, 27, 0.09);
+}
+
+.login-submode-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 13px;
+  border-radius: 12px;
+  background: rgba(23, 63, 52, 0.07);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.login-hint-banner {
+  margin-top: 14px;
+  padding: 10px 13px;
+  border-radius: 12px;
+  background: rgba(168, 107, 38, 0.1);
+  border: 1px solid rgba(168, 107, 38, 0.2);
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.password-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrap input {
+  padding-right: 64px;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 8px;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(23, 63, 52, 0.08);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.password-toggle-btn:hover {
+  background: rgba(23, 63, 52, 0.15);
+}
+
+.otp-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.otp-send-btn {
+  white-space: nowrap;
+  padding: 0 16px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 650;
+  border: 1px solid rgba(23, 63, 52, 0.22);
+  background: rgba(23, 63, 52, 0.06);
+  color: var(--accent);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.otp-send-btn:hover:not(:disabled) {
+  background: rgba(23, 63, 52, 0.12);
+  border-color: rgba(23, 63, 52, 0.36);
+}
+
+.otp-send-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.text-link-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.text-link-btn:hover {
+  color: var(--accent-strong);
+}
+
+.banner-action-btn {
+  margin-top: 8px;
+  padding: 6px 11px;
+  border-radius: 8px;
+  border: 1px solid rgba(173, 61, 47, 0.28);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.banner-action-btn:hover {
+  background: #fff;
+}
+
+.login-otp-notice {
+  margin-top: 0;
+  font-size: 13px;
+}
+
+.dev-code-hint {
+  margin-top: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.login-footer-copy {
+  margin: 4px 0 0;
+  text-align: center;
+  font-size: 13px;
 }
 
 /* ─── Enhanced metric tiles ─── */

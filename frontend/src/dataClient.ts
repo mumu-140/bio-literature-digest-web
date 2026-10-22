@@ -241,8 +241,28 @@ export async function fetchAuthUser() {
   return request<AuthUser>("/api/auth/me");
 }
 
-export async function login(form: { email: string; name: string }) {
-  return request<{ user: AuthUser } | LoginOtpIssued>("/api/auth/login", {
+export async function login(form: { email: string; password: string; name?: string }) {
+  return request<{ user: AuthUser }>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify(form),
+  });
+}
+
+export async function requestRegisterOtp(email: string, purpose: "register" | "reset" = "register") {
+  return request<LoginOtpIssued>("/api/auth/register/otp/request", {
+    method: "POST",
+    body: JSON.stringify({ email, purpose }),
+  });
+}
+
+export async function registerAccount(form: {
+  email: string;
+  code: string;
+  password: string;
+  name?: string;
+  purpose?: "register" | "reset";
+}) {
+  return request<{ user: AuthUser }>("/api/auth/register", {
     method: "POST",
     body: JSON.stringify(form),
   });

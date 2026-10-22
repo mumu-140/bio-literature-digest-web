@@ -66,16 +66,92 @@ class LoginOtpTestCase(unittest.TestCase):
         database.SessionLocal = None
         reset_settings_cache()
 
-    def test_login_endpoint_returns_issued_payload(self) -> None:
+    def test_register_with_email_otp_and_login_with_password(self) -> None:
         with TestClient(self.app_factory()) as client:
-            response = client.post("/api/auth/login", json={"email": "admin@example.com"})
-            self.assertEqual(response.status_code, 202)
-            body = response.json()
-            self.assertEqual(body["email"], "admin@example.com")
-            self.assertEqual(body["expires_in"], 600)
-            self.assertEqual(body["resend_after"], 60)
-            self.assertIn("dev_code", body)
-            self.assertIn("Cache-Control", response.headers)
+            otp_resp = client.post(
+                "/api/auth/register/otp/request",
+                json={"email": "newuser@example.com", "purpose": "register"},
+            )
+            self.assertEqual(otp_resp.status_code, 202)
+            issued = otp_resp.json()
+            self.assertEqual(issued["email"], "newuser@example.com")
+            self.assertTrue(issued.get("dev_code"))
+
+            reg_resp = client.post(
+                "/api/auth/register",
+                json={
+                    "email": "newuser@example.com",
+                    "code": issued["dev_code"],
+                    "password": "StrongPass!123",
+                    "name": "New Researcher",
+                    "purpose": "register",
+                },
+            )
+            self.assertEqual(reg_resp.status_code, 201)
+            self.assertEqual(reg_resp.json()["user"]["email"], "newuser@example.com")
+            self.assertEqual(reg_resp.json()["user"]["name"], "New Researcher")
+            self.assertIn("bio_digest_session", reg_resp.cookies)
+
+            client.post("/api/auth/logout")
+
+            bad_login = client.post(
+                "/api/auth/login",
+                json={"email": "newuser@example.com", "password": "WrongPassword"},
+            )
+            self.assertEqual(bad_login.status_code, 401)
+
+            good_login = client.post(
+                "/api/auth/login",
+                json={"email": "newuser@example.com", "password": "StrongPass!123"},
+            )
+            self.assertEqual(good_login.status_code, 200)
+            self.assertEqual(good_login.json()["user"]["email"], "newuser@example.com")
+            self.assertIn("bio_digest_session", good_login.cookies)
+
+    def test_passwordless_existing_user_activates_via_register_and_resets_password(self) -> None:
+        with TestClient(self.app_factory()) as client:
+            # Before setting password, direct login with password prompts registration/activation
+            unactivated = client.post(
+                "/api/auth/login",
+                json={"email": "admin@example.com", "password": "InitialPass123"},
+            )
+            self.assertEqual(unactivated.status_code, 400)
+            self.assertIn("尚未设置登录密码", unactivated.json()["detail"])
+
+            otp_resp = client.post(
+                "/api/auth/register/otp/request",
+                json={"email": "admin@example.com", "purpose": "register"},
+            )
+            self.assertEqual(otp_resp.status_code, 202)
+            code = otp_resp.json()["dev_code"]
+
+            activate_resp = client.post(
+                "/api/auth/register",
+                json={
+                    "email": "admin@example.com",
+                    "code": code,
+                    "password": "AdminPass!123",
+                    "purpose": "register",
+                },
+            )
+            self.assertEqual(activate_resp.status_code, 201)
+            self.assertEqual(activate_resp.json()["user"]["role"], "admin")
+
+            # Duplicate register request is rejected with 409 once password is set
+            dup_otp = client.post(
+                "/api/auth/register/otp/request",
+                json={"email": "admin@example.com", "purpose": "register"},
+            )
+            self.assertEqual(dup_otp.status_code, 409)
+
+            # Password login works directly without OTP
+            client.post("/api/auth/logout")
+            login_resp = client.post(
+                "/api/auth/login",
+                json={"email": "admin@example.com", "password": "AdminPass!123"},
+            )
+            self.assertEqual(login_resp.status_code, 200)
+            self.assertEqual(login_resp.json()["user"]["role"], "admin")
 
     def test_verify_with_dev_echo_code_sets_session_cookie(self) -> None:
         with TestClient(self.app_factory()) as client:

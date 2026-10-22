@@ -22,6 +22,7 @@ from ..schemas import (
     UserRead,
     UserUpdate,
 )
+from ..security import hash_password
 from ..services.audit import record_action
 from ..services.pushes import PushRequestError, create_push_batch
 from ..services.subscription_users import SubscriptionEmailExistsError, add_subscription_email
@@ -43,10 +44,11 @@ def create_user(payload: UserCreate, current_user: User = Depends(require_admin)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists")
     normalized_email = payload.email.lower()
     resolved_group = payload.user_group or "internal"
+    raw_password = (payload.password or "").strip()
     user = User(
         email=normalized_email,
         name=(payload.name or "").strip() or derive_display_name(normalized_email),
-        password_hash="passwordless",
+        password_hash=hash_password(raw_password) if raw_password else "passwordless",
         role=payload.role,
         user_group=resolved_group,
         owner_admin_user_id=current_user.id if resolved_group == "outsider" else None,
@@ -62,7 +64,7 @@ def create_user(payload: UserCreate, current_user: User = Depends(require_admin)
         target_user_id=user.id,
         entity_type="user",
         entity_id=user.id,
-        detail={"email": user.email, "role": user.role, "user_group": user.user_group},
+        detail={"email": user.email, "role": user.role, "user_group": user.user_group, "has_password": bool(raw_password)},
     )
     db.commit()
     db.refresh(user)
@@ -76,11 +78,18 @@ def update_user(user_id: int, payload: UserUpdate, current_user: User = Depends(
         value = getattr(payload, field)
         if value is not None:
             setattr(user, field, value)
+    raw_password = (payload.password or "").strip() if payload.password is not None else ""
+    if raw_password:
+        user.password_hash = hash_password(raw_password)
+        user.must_change_password = False
     user.name = (user.name or "").strip() or derive_display_name(user.email)
     if user.user_group != "outsider":
         user.owner_admin_user_id = None
     elif user.owner_admin_user_id is None:
         user.owner_admin_user_id = current_user.id
+    audit_detail = payload.model_dump(exclude_none=True, exclude={"password"})
+    if raw_password:
+        audit_detail["password_reset"] = True
     record_action(
         db,
         action_type="admin_update_user",
@@ -88,7 +97,7 @@ def update_user(user_id: int, payload: UserUpdate, current_user: User = Depends(
         target_user_id=user.id,
         entity_type="user",
         entity_id=user.id,
-        detail=payload.model_dump(exclude_none=True),
+        detail=audit_detail,
     )
     db.commit()
     db.refresh(user)

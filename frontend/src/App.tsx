@@ -1,4 +1,4 @@
-import { FormEvent, MouseEvent, ReactNode, useEffect, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useState } from "react";
 import {
   NavLink,
   Navigate,
@@ -12,8 +12,8 @@ import {
   AuthUser,
   fetchAuthUser,
   login,
-  requestLoginOtp,
-  verifyLoginOtp,
+  registerAccount,
+  requestRegisterOtp,
   type LoginOtpIssued,
   logout,
 } from "./dataClient";
@@ -342,17 +342,24 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const hintedEmail = searchParams.get("email") || "";
-  const [form, setForm] = useState({ email: searchParams.get("email") || "" });
+  const initialMode = searchParams.get("mode") === "register" ? "register" : "login";
+  const [mode, setMode] = useState<"login" | "register" | "reset">(initialMode);
+  const [email, setEmail] = useState(hintedEmail);
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
-  const [stage, setStage] = useState<"email" | "code">("email");
-  const [issued, setIssued] = useState<LoginOtpIssued | null>(null);
   const [code, setCode] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [issued, setIssued] = useState<LoginOtpIssued | null>(null);
   const [resendIn, setResendIn] = useState(0);
+  const [otpSending, setOtpSending] = useState(false);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
-    setForm((current) => (current.email === hintedEmail ? current : { ...current, email: hintedEmail }));
+    if (hintedEmail) {
+      setEmail(hintedEmail);
+    }
   }, [hintedEmail]);
 
   useEffect(() => {
@@ -365,33 +372,34 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
     return () => window.clearInterval(timer);
   }, [resendIn]);
 
-  function handleIssued(next: LoginOtpIssued) {
-    setIssued(next);
-    setStage("code");
-    setResendIn(Math.max(next.resend_after, 1));
+  function switchMode(nextMode: "login" | "register" | "reset") {
+    setMode(nextMode);
+    setError("");
+    setIssued(null);
     setCode("");
+    setPassword("");
+    setConfirmPassword("");
   }
 
-  async function submitEmail(event: FormEvent) {
+  function finishAuth(authenticatedUser: AuthUser) {
+    onLogin(authenticatedUser);
+    navigate(
+      sanitizeRememberedRoute(searchParams.get("next")) ||
+        restoreRememberedRoute() ||
+        "/papers/published",
+      {
+        replace: true,
+      },
+    );
+  }
+
+  async function submitLogin(event: FormEvent) {
     event.preventDefault();
     setPending(true);
     setError("");
     try {
-      const response = await login({ email: form.email, name });
-      const issuedResponse = response as LoginOtpIssued;
-      if (issuedResponse && "resend_after" in issuedResponse && issuedResponse.resend_after !== undefined) {
-        handleIssued(issuedResponse);
-      } else {
-        onLogin((response as { user: AuthUser }).user);
-        navigate(
-          sanitizeRememberedRoute(searchParams.get("next")) ||
-            restoreRememberedRoute() ||
-            "/papers/published",
-          {
-            replace: true,
-          },
-        );
-      }
+      const response = await login({ email: email.trim(), password });
+      finishAuth(response.user);
     } catch (submitError) {
       setError((submitError as Error).message);
     } finally {
@@ -399,43 +407,69 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
     }
   }
 
-  async function submitCode(event: FormEvent) {
-    event.preventDefault();
-    setPending(true);
+  async function handleSendOtp() {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setError("请先输入电子邮箱地址");
+      return;
+    }
+    if (resendIn > 0 || otpSending) {
+      return;
+    }
+    setOtpSending(true);
     setError("");
     try {
-      const response = await verifyLoginOtp(form.email, code);
-      onLogin(response.user);
-      navigate(
-        sanitizeRememberedRoute(searchParams.get("next")) ||
-          restoreRememberedRoute() ||
-          "/papers/published",
-        {
-          replace: true,
-        },
-      );
-    } catch (submitError) {
-      setError((submitError as Error).message);
+      const purpose = mode === "reset" ? "reset" : "register";
+      const nextIssued = await requestRegisterOtp(trimmedEmail, purpose);
+      setIssued(nextIssued);
+      setResendIn(Math.max(nextIssued.resend_after, 1));
+    } catch (sendError) {
+      setError((sendError as Error).message);
     } finally {
-      setPending(false);
+      setOtpSending(false);
     }
   }
 
-  async function resendCode(event: MouseEvent) {
+  async function submitRegisterOrReset(event: FormEvent) {
     event.preventDefault();
-    if (resendIn > 0) {
+    if (password.trim().length < 6) {
+      setError("登录密码长度至少为 6 位");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("两次输入的密码不一致，请重新确认");
+      return;
+    }
+    if (!code.trim()) {
+      setError("请输入邮箱收到的 6 位验证码");
       return;
     }
     setPending(true);
     setError("");
     try {
-      handleIssued(await requestLoginOtp(form.email));
-    } catch (resendError) {
-      setError((resendError as Error).message);
+      const purpose = mode === "reset" ? "reset" : "register";
+      const response = await registerAccount({
+        email: email.trim(),
+        code: code.trim(),
+        password,
+        name: mode === "register" ? name.trim() : undefined,
+        purpose,
+      });
+      finishAuth(response.user);
+    } catch (submitError) {
+      setError((submitError as Error).message);
     } finally {
       setPending(false);
     }
   }
+
+  const canGuideToRegister =
+    mode === "login" &&
+    Boolean(error) &&
+    (error.includes("尚未设置登录密码") || error.includes("尚未注册"));
+
+  const canGuideToReset =
+    mode === "register" && Boolean(error) && error.includes("已完成注册");
 
   return (
     <div className="login-shell">
@@ -451,99 +485,276 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
           </p>
         </div>
 
+        <div className="login-mode-tabs" role="tablist" aria-label="登录与注册切换">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === "login"}
+            className={`login-mode-tab${mode === "login" ? " is-active" : ""}`}
+            onClick={() => switchMode("login")}
+          >
+            账户登录
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === "register"}
+            className={`login-mode-tab${mode === "register" ? " is-active" : ""}`}
+            onClick={() => switchMode("register")}
+          >
+            邮箱注册
+          </button>
+        </div>
+
+        {mode === "reset" ? (
+          <div className="login-submode-bar">
+            <span>通过邮箱验证码重置登录密码</span>
+            <button
+              type="button"
+              className="text-link-btn"
+              onClick={() => switchMode("login")}
+            >
+              返回密码登录
+            </button>
+          </div>
+        ) : null}
+
         {hintedEmail ? (
           <div className="login-hint-banner">
             本邮件直达链接对应账户：<strong>{hintedEmail}</strong>
           </div>
         ) : null}
 
-        {stage === "email" ? (
-          <form className="stack login-form" onSubmit={submitEmail}>
+        {mode === "login" ? (
+          <form className="stack login-form" onSubmit={submitLogin}>
+            <label>
+              <span className="field-label">账户邮箱</span>
+              <input
+                type="email"
+                name="email"
+                autoComplete="username"
+                required
+                placeholder="name@example.com"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
+            </label>
+            <label>
+              <div className="field-label-row">
+                <span className="field-label">登录密码</span>
+                <button
+                  type="button"
+                  className="text-link-btn"
+                  onClick={() => switchMode("reset")}
+                >
+                  忘记密码？
+                </button>
+              </div>
+              <div className="password-input-wrap">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  name="password"
+                  autoComplete="current-password"
+                  required
+                  placeholder="请输入登录密码"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                />
+                <button
+                  type="button"
+                  className="password-toggle-btn"
+                  onClick={() => setShowPassword((value) => !value)}
+                  aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                >
+                  {showPassword ? "隐藏" : "显示"}
+                </button>
+              </div>
+            </label>
+
+            {error ? (
+              <div className="notice-banner is-error">
+                <div>{error}</div>
+                {canGuideToRegister ? (
+                  <button
+                    type="button"
+                    className="banner-action-btn"
+                    onClick={() => switchMode("register")}
+                  >
+                    前往「邮箱注册」验证并设置密码 →
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            <button className="primary-button login-submit-btn" type="submit" disabled={pending}>
+              {pending ? (
+                <>
+                  <span className="loading-spinner" />
+                  <span>正在登录工作台…</span>
+                </>
+              ) : (
+                <span>登录工作台</span>
+              )}
+            </button>
+
+            <p className="login-footer-copy muted">
+              还没有账号或首次激活密码？{" "}
+              <button
+                type="button"
+                className="text-link-btn"
+                onClick={() => switchMode("register")}
+              >
+                立即通过邮箱注册
+              </button>
+            </p>
+          </form>
+        ) : (
+          <form className="stack login-form" onSubmit={submitRegisterOrReset}>
             <label>
               <span className="field-label">电子邮箱</span>
               <input
                 type="email"
+                name="email"
+                autoComplete="email"
                 required
                 placeholder="name@example.com"
-                value={form.email}
-                onChange={(event) => setForm({ ...form, email: event.target.value })}
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
               />
             </label>
+
             <label>
-              <span className="field-label">显示姓名（可选）</span>
-              <input
-                placeholder="例如：杨森"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-            </label>
-            {error ? <div className="notice-banner is-error">{error}</div> : null}
-            <button className="primary-button login-submit-btn" type="submit" disabled={pending}>
-              {pending ? (
-                <>
-                  <span className="loading-spinner" />
-                  <span>正在发送登录验证码…</span>
-                </>
-              ) : (
-                <span>获取登录验证码</span>
-              )}
-            </button>
-          </form>
-        ) : (
-          <form className="stack login-form" onSubmit={submitCode}>
-            <p className="muted">
-              验证码已发送至 <strong>{form.email}</strong>，请查收邮件并在
-              {" "}{issued ? Math.max(Math.ceil(issued.expires_in / 60), 1) : 10}{" "}
-              分钟内完成登录。
-            </p>
-            <label>
-              <span className="field-label">登录验证码</span>
-              <input
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                required
-                placeholder="6 位数字"
-                value={code}
-                onChange={(event) => setCode(event.target.value)}
-              />
-            </label>
-            {error ? <div className="notice-banner is-error">{error}</div> : null}
-            <button className="primary-button login-submit-btn" type="submit" disabled={pending}>
-              {pending ? (
-                <>
-                  <span className="loading-spinner" />
-                  <span>正在验证登录…</span>
-                </>
-              ) : (
-                <span>进入文献工作台</span>
-              )}
-            </button>
-            <p className="muted">
-              {resendIn > 0 ? (
-                <span>{resendIn} 秒后可重新发送验证码</span>
-              ) : (
-                <a
-                  href="#resend"
-                  onClick={(event) => {
-                    void resendCode(event);
-                  }}
+              <span className="field-label">邮箱验证码</span>
+              <div className="otp-input-row">
+                <input
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  required
+                  maxLength={8}
+                  placeholder="6 位数字验证码"
+                  value={code}
+                  onChange={(event) => setCode(event.target.value)}
+                />
+                <button
+                  type="button"
+                  className="ghost-button otp-send-btn"
+                  disabled={otpSending || resendIn > 0 || !email.trim()}
+                  onClick={() => void handleSendOtp()}
                 >
-                  重新发送验证码
-                </a>
+                  {otpSending
+                    ? "发送中…"
+                    : resendIn > 0
+                      ? `${resendIn}s 后重发`
+                      : issued
+                        ? "重新获取"
+                        : "获取验证码"}
+                </button>
+              </div>
+            </label>
+
+            {issued ? (
+              <div className="notice-banner is-success login-otp-notice">
+                验证码已发送至 <strong>{issued.email}</strong>，请在{" "}
+                {Math.max(Math.ceil(issued.expires_in / 60), 1)} 分钟内完成验证。
+                {issued.dev_code ? (
+                  <div className="dev-code-hint">
+                    开发模式验证码：<strong>{issued.dev_code}</strong>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {mode === "register" ? (
+              <label>
+                <span className="field-label">显示姓名（可选）</span>
+                <input
+                  type="text"
+                  name="name"
+                  autoComplete="name"
+                  placeholder="例如：杨森（留空默认取邮箱前缀）"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
+              </label>
+            ) : null}
+
+            <label>
+              <span className="field-label">
+                {mode === "reset" ? "设置新密码" : "设置登录密码"}
+              </span>
+              <div className="password-input-wrap">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  name="new_password"
+                  autoComplete="new-password"
+                  required
+                  minLength={6}
+                  placeholder="至少 6 位字符"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                />
+                <button
+                  type="button"
+                  className="password-toggle-btn"
+                  onClick={() => setShowPassword((value) => !value)}
+                  aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                >
+                  {showPassword ? "隐藏" : "显示"}
+                </button>
+              </div>
+            </label>
+
+            <label>
+              <span className="field-label">
+                {mode === "reset" ? "确认新密码" : "确认登录密码"}
+              </span>
+              <input
+                type={showPassword ? "text" : "password"}
+                name="confirm_password"
+                autoComplete="new-password"
+                required
+                minLength={6}
+                placeholder="请再次输入密码"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+              />
+            </label>
+
+            {error ? (
+              <div className="notice-banner is-error">
+                <div>{error}</div>
+                {canGuideToReset ? (
+                  <button
+                    type="button"
+                    className="banner-action-btn"
+                    onClick={() => switchMode("reset")}
+                  >
+                    前往「重置密码」通过邮箱验证修改密码 →
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            <button className="primary-button login-submit-btn" type="submit" disabled={pending}>
+              {pending ? (
+                <>
+                  <span className="loading-spinner" />
+                  <span>{mode === "reset" ? "正在重置密码…" : "正在完成注册…"}</span>
+                </>
+              ) : (
+                <span>{mode === "reset" ? "重置密码并登录" : "验证邮箱并完成注册"}</span>
               )}
-              {" · "}
-              <a
-                href="#back"
-                onClick={(event) => {
-                  event.preventDefault();
-                  setStage("email");
-                  setIssued(null);
-                  setCode("");
-                  setError("");
-                }}
+            </button>
+
+            <p className="login-footer-copy muted">
+              已有账户密码？{" "}
+              <button
+                type="button"
+                className="text-link-btn"
+                onClick={() => switchMode("login")}
               >
-                返回修改邮箱
-              </a>
+                返回直接登录
+              </button>
             </p>
           </form>
         )}

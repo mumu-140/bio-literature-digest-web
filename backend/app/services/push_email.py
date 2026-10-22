@@ -12,16 +12,25 @@ class PushEmailError(RuntimeError):
     """Raised when the push notification email cannot be queued."""
 
 
-def send_otp_email(*, email: str, code: str, ttl_minutes: int) -> None:
-    """Queue one login verification code through the existing Agently account."""
+def send_otp_email(*, email: str, code: str, ttl_minutes: int, purpose: str = "register") -> None:
+    """Queue one email verification code through the existing Agently account."""
+    if purpose == "reset":
+        subject = "[Bio Digest] 密码重置验证码"
+        action_label = "重置登录密码"
+    elif purpose == "login":
+        subject = "[Bio Digest] 登录验证码"
+        action_label = "登录"
+    else:
+        subject = "[Bio Digest] 注册邮箱验证码"
+        action_label = "注册或激活账户"
     _send_raw_message(
         to=email,
-        subject="[Bio Digest] 登录验证码",
+        subject=subject,
         body=(
             "<p>您好：</p>"
-            f"<p>本次登录验证码为 <strong>{html.escape(code)}</strong>"
+            f"<p>您正在 Bio Literature Digest 进行{action_label}，本次验证码为 <strong>{html.escape(code)}</strong>"
             f"，{ttl_minutes} 分钟内有效。</p>"
-            "<p>验证码仅供本人登录使用，请勿转发给任何人。"
+            f"<p>验证码仅供本人{action_label}使用，请勿转发给任何人。"
             "若非本人操作，请忽略本邮件。</p>"
         ),
     )

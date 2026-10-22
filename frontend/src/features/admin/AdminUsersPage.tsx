@@ -4,7 +4,7 @@ import { request, UserItem } from "../../dataClient";
 
 export function AdminUsersPage() {
   const [users, setUsers] = useState<UserItem[]>([]);
-  const [form, setForm] = useState({ email: "", name: "", role: "member", user_group: "internal" });
+  const [form, setForm] = useState({ email: "", name: "", password: "", role: "member", user_group: "internal" });
   const [subscriptionForm, setSubscriptionForm] = useState({ email: "", name: "", user_group: "internal" });
   const [subscriptionMessage, setSubscriptionMessage] = useState("");
   const [subscriptionPending, setSubscriptionPending] = useState(false);
@@ -21,9 +21,13 @@ export function AdminUsersPage() {
     event.preventDefault();
     await request("/api/admin/users", {
       method: "POST",
-      body: JSON.stringify({ ...form, name: form.name || form.email.split("@")[0] || "" }),
+      body: JSON.stringify({
+        ...form,
+        name: form.name || form.email.split("@")[0] || "",
+        password: form.password.trim() || undefined,
+      }),
     });
-    setForm({ email: "", name: "", role: "member", user_group: "internal" });
+    setForm({ email: "", name: "", password: "", role: "member", user_group: "internal" });
     await load();
   }
 
@@ -64,8 +68,9 @@ export function AdminUsersPage() {
           </div>
         </div>
         <form className="stack" onSubmit={createUser}>
-          <input placeholder="邮箱" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
-          <input placeholder="姓名" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+          <input type="email" required placeholder="邮箱" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+          <input placeholder="姓名（可选）" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+          <input type="password" placeholder="初始密码（可选，留空由用户邮箱注册设置）" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
           <select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}>
             <option value="member">member</option>
             <option value="admin">admin</option>
