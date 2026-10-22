@@ -186,15 +186,10 @@ def request_register_otp(
     if user is not None:
         if not user.is_active:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="该账户已被停用，请联系管理员")
-        if purpose == "register" and has_usable_password(user.password_hash):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="该邮箱已完成注册，请直接输入密码登录；如忘记密码可点击「忘记密码」重置",
-            )
     elif purpose == "reset":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="该邮箱尚未注册，请先切换至「邮箱注册」完成注册",
+            detail="该邮箱尚未注册，请先切换至「注册 / 首次设密」完成注册",
         )
 
     client_ip = request.client.host if request.client else ""
@@ -277,15 +272,10 @@ def register_with_otp(
     if user is not None:
         if not user.is_active:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="该账户已被停用，请联系管理员")
-        if purpose == "register" and has_usable_password(user.password_hash):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="该邮箱已完成注册，请直接输入密码登录",
-            )
     elif purpose == "reset":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="该邮箱尚未注册，请先切换至「邮箱注册」完成注册",
+            detail="该邮箱尚未注册，请先切换至「注册 / 首次设密」完成注册",
         )
 
     now = datetime.utcnow()

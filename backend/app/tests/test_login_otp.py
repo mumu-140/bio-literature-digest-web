@@ -137,13 +137,6 @@ class LoginOtpTestCase(unittest.TestCase):
             self.assertEqual(activate_resp.status_code, 201)
             self.assertEqual(activate_resp.json()["user"]["role"], "admin")
 
-            # Duplicate register request is rejected with 409 once password is set
-            dup_otp = client.post(
-                "/api/auth/register/otp/request",
-                json={"email": "admin@example.com", "purpose": "register"},
-            )
-            self.assertEqual(dup_otp.status_code, 409)
-
             # Password login works directly without OTP
             client.post("/api/auth/logout")
             login_resp = client.post(

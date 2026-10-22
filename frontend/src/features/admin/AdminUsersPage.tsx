@@ -39,6 +39,23 @@ export function AdminUsersPage() {
     await load();
   }
 
+  async function resetUserPassword(user: UserItem) {
+    const nextPassword = window.prompt(`为账户 ${user.email} 设置新登录密码（至少 6 位）：`);
+    if (!nextPassword) {
+      return;
+    }
+    if (nextPassword.trim().length < 6) {
+      window.alert("密码长度至少为 6 位");
+      return;
+    }
+    await request(`/api/admin/users/${user.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ password: nextPassword.trim() }),
+    });
+    window.alert(`已更新 ${user.email} 的登录密码`);
+    await load();
+  }
+
   async function createSubscription(event: FormEvent) {
     event.preventDefault();
     setSubscriptionPending(true);
@@ -133,6 +150,8 @@ export function AdminUsersPage() {
                     </div>
                   </div>
                   <div className="mobile-card-actions">
+                    <button className="table-link" onClick={() => resetUserPassword(user)}>设密</button>
+                    {" · "}
                     <button className="table-link" onClick={() => toggleUser(user)}>{user.is_active ? "停用" : "启用"}</button>
                   </div>
                 </article>
@@ -162,6 +181,8 @@ export function AdminUsersPage() {
                     <td>{user.is_active ? "active" : "inactive"}</td>
                     <td>{user.last_login_at || "never"}</td>
                     <td>
+                      <button className="table-link" onClick={() => resetUserPassword(user)}>设密</button>
+                      {" · "}
                       <button className="table-link" onClick={() => toggleUser(user)}>{user.is_active ? "停用" : "启用"}</button>
                     </td>
                   </tr>

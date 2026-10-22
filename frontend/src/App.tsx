@@ -468,9 +468,6 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
     Boolean(error) &&
     (error.includes("尚未设置登录密码") || error.includes("尚未注册"));
 
-  const canGuideToReset =
-    mode === "register" && Boolean(error) && error.includes("已完成注册");
-
   return (
     <div className="login-shell">
       <div className="login-panel">
@@ -502,7 +499,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
             className={`login-mode-tab${mode === "register" ? " is-active" : ""}`}
             onClick={() => switchMode("register")}
           >
-            邮箱注册
+            注册 / 首次设密
           </button>
         </div>
 
@@ -580,7 +577,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
                     className="banner-action-btn"
                     onClick={() => switchMode("register")}
                   >
-                    前往「邮箱注册」验证并设置密码 →
+                    前往「注册 / 首次设密」验证邮箱并设置密码 →
                   </button>
                 ) : null}
               </div>
@@ -598,18 +595,23 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
             </button>
 
             <p className="login-footer-copy muted">
-              还没有账号或首次激活密码？{" "}
+              原有免密账户首次登录或新用户？{" "}
               <button
                 type="button"
                 className="text-link-btn"
                 onClick={() => switchMode("register")}
               >
-                立即通过邮箱注册
+                立即验证邮箱设密 / 注册
               </button>
             </p>
           </form>
         ) : (
           <form className="stack login-form" onSubmit={submitRegisterOrReset}>
+            {mode === "register" ? (
+              <p className="small-copy" style={{ margin: 0 }}>
+                新邮箱将自动创建账户；原有免密账户验证邮箱后将直接绑定新密码（自动保留原有角色权限与收藏数据）。
+              </p>
+            ) : null}
             <label>
               <span className="field-label">电子邮箱</span>
               <input
@@ -720,20 +722,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
               />
             </label>
 
-            {error ? (
-              <div className="notice-banner is-error">
-                <div>{error}</div>
-                {canGuideToReset ? (
-                  <button
-                    type="button"
-                    className="banner-action-btn"
-                    onClick={() => switchMode("reset")}
-                  >
-                    前往「重置密码」通过邮箱验证修改密码 →
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
+            {error ? <div className="notice-banner is-error">{error}</div> : null}
 
             <button className="primary-button login-submit-btn" type="submit" disabled={pending}>
               {pending ? (
