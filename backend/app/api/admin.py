@@ -1,13 +1,23 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from ..deps import get_db, require_admin
 from ..integrations.producer_import.service import ImportStatusError, check_and_import_latest_runs, import_run_by_id, list_run_statuses
 from ..integrations.producer_import.user_sync import sync_users_from_producer_config
-from ..models import User
+from ..models import (
+    ActionLog,
+    ApiRuleSuggestion,
+    LiteraturePushV2,
+    LoginOtpCode,
+    Session as UserSession,
+    User,
+    UserExportJobV2,
+    UserLiteratureFavorite,
+    UserManualReview,
+)
 from ..schemas import (
     ImportResult,
     ImportRunRead,
@@ -25,7 +35,12 @@ from ..schemas import (
 from ..security import hash_password
 from ..services.audit import record_action
 from ..services.pushes import PushRequestError, create_push_batch
-from ..services.subscription_users import SubscriptionEmailExistsError, add_subscription_email
+from ..services.subscription_users import (
+    SubscriptionEmailExistsError,
+    add_subscription_email,
+    remove_subscription_email,
+    sync_subscription_email_status,
+)
 from ..services.user_visibility import require_visible_target_user, visible_user_statement
 from ..services.user_sync import derive_display_name
 
@@ -101,7 +116,82 @@ def update_user(user_id: int, payload: UserUpdate, current_user: User = Depends(
     )
     db.commit()
     db.refresh(user)
+    if payload.is_active is not None:
+        from ..config import PROJECT_ROOT
+        from instance_paths import get_instance_paths
+
+        try:
+            sync_subscription_email_status(
+                get_instance_paths(PROJECT_ROOT).producer_users_config,
+                email=user.email,
+                is_active=user.is_active,
+            )
+        except Exception:  # noqa: BLE001
+            pass
     return user
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(
+    user_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> Response:
+    user = require_visible_target_user(db, current_user, user_id)
+    if user.id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="不能删除当前正在登录的管理员账户",
+        )
+    deleted_email = user.email
+    deleted_name = user.name
+    deleted_role = user.role
+    deleted_group = user.user_group
+
+    db.execute(update(User).where(User.owner_admin_user_id == user.id).values(owner_admin_user_id=None))
+    db.execute(delete(UserSession).where(UserSession.user_id == user.id))
+    db.execute(delete(UserLiteratureFavorite).where(UserLiteratureFavorite.user_id == user.id))
+    db.execute(delete(UserManualReview).where(UserManualReview.user_id == user.id))
+    db.execute(
+        delete(LiteraturePushV2).where(
+            (LiteraturePushV2.recipient_user_id == user.id)
+            | (LiteraturePushV2.sent_by_user_id == user.id)
+        )
+    )
+    db.execute(update(UserExportJobV2).where(UserExportJobV2.requested_by_user_id == user.id).values(requested_by_user_id=None))
+    db.execute(update(ApiRuleSuggestion).where(ApiRuleSuggestion.reviewed_by_user_id == user.id).values(reviewed_by_user_id=None))
+    db.execute(update(ActionLog).where(ActionLog.actor_user_id == user.id).values(actor_user_id=None))
+    db.execute(update(ActionLog).where(ActionLog.target_user_id == user.id).values(target_user_id=None))
+    db.execute(delete(LoginOtpCode).where(LoginOtpCode.email == deleted_email.lower()))
+    db.delete(user)
+    record_action(
+        db,
+        action_type="admin_delete_user",
+        actor_user_id=current_user.id,
+        target_user_id=None,
+        entity_type="user",
+        entity_id=user_id,
+        detail={
+            "email": deleted_email,
+            "name": deleted_name,
+            "role": deleted_role,
+            "user_group": deleted_group,
+        },
+    )
+    db.commit()
+
+    from ..config import PROJECT_ROOT
+    from instance_paths import get_instance_paths
+
+    try:
+        remove_subscription_email(
+            get_instance_paths(PROJECT_ROOT).producer_users_config,
+            email=deleted_email,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/subscriptions", response_model=SubscriptionEmailRead, status_code=status.HTTP_201_CREATED)

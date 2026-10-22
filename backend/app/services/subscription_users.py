@@ -79,6 +79,62 @@ def add_subscription_email(
     )
 
 
+def remove_subscription_email(config_path: Path, *, email: str) -> bool:
+    """Remove a recipient from users.yaml if present, with lock and backup."""
+    normalized_email = email.strip().lower()
+    config_path = config_path.resolve()
+    if not config_path.exists():
+        return False
+    lock_path = config_path.with_suffix(f"{config_path.suffix}.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with lock_path.open("a+", encoding="utf-8") as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        payload = _read_payload(config_path)
+        users = payload.get("users")
+        if not isinstance(users, list):
+            return False
+        kept = [
+            item
+            for item in users
+            if not (isinstance(item, dict) and str(item.get("email", "")).strip().lower() == normalized_email)
+        ]
+        if len(kept) == len(users):
+            return False
+        _backup_config(config_path)
+        payload["users"] = kept
+        _atomic_write_yaml(config_path, payload)
+        return True
+
+
+def sync_subscription_email_status(config_path: Path, *, email: str, is_active: bool) -> bool:
+    """Update is_active in users.yaml if the email is present."""
+    normalized_email = email.strip().lower()
+    config_path = config_path.resolve()
+    if not config_path.exists():
+        return False
+    lock_path = config_path.with_suffix(f"{config_path.suffix}.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with lock_path.open("a+", encoding="utf-8") as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        payload = _read_payload(config_path)
+        users = payload.get("users")
+        if not isinstance(users, list):
+            return False
+        changed = False
+        for item in users:
+            if isinstance(item, dict) and str(item.get("email", "")).strip().lower() == normalized_email:
+                if bool(item.get("is_active", True)) != is_active:
+                    item["is_active"] = is_active
+                    changed = True
+        if not changed:
+            return False
+        _backup_config(config_path)
+        _atomic_write_yaml(config_path, payload)
+        return True
+
+
 def _read_payload(config_path: Path) -> dict:
     if not config_path.exists():
         raise FileNotFoundError(f"Producer users config not found: {config_path}")

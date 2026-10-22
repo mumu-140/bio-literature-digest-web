@@ -56,6 +56,20 @@ export function AdminUsersPage() {
     await load();
   }
 
+  async function deleteUser(user: UserItem) {
+    if (!window.confirm(`确定要永久删除账户 ${user.email} 吗？`)) {
+      return;
+    }
+    try {
+      await request(`/api/admin/users/${user.id}`, {
+        method: "DELETE",
+      });
+      await load();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "删除账户失败");
+    }
+  }
+
   async function createSubscription(event: FormEvent) {
     event.preventDefault();
     setSubscriptionPending(true);
@@ -153,6 +167,8 @@ export function AdminUsersPage() {
                     <button className="table-link" onClick={() => resetUserPassword(user)}>设密</button>
                     {" · "}
                     <button className="table-link" onClick={() => toggleUser(user)}>{user.is_active ? "停用" : "启用"}</button>
+                    {" · "}
+                    <button className="table-link" onClick={() => deleteUser(user)}>删除</button>
                   </div>
                 </article>
               ))}
@@ -184,6 +200,8 @@ export function AdminUsersPage() {
                       <button className="table-link" onClick={() => resetUserPassword(user)}>设密</button>
                       {" · "}
                       <button className="table-link" onClick={() => toggleUser(user)}>{user.is_active ? "停用" : "启用"}</button>
+                      {" · "}
+                      <button className="table-link" onClick={() => deleteUser(user)}>删除</button>
                     </td>
                   </tr>
                 ))}

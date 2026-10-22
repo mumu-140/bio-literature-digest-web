@@ -28,9 +28,16 @@ def bootstrap_admin() -> None:
     if database.SessionLocal is None:
         return
     with database.SessionLocal() as db:
-        existing = db.scalar(select(User).where(User.email == settings.initial_admin_email.lower()))
+        target_email = settings.initial_admin_email.lower()
+        existing = db.scalar(select(User).where(User.email == target_email))
         if existing:
             return
+        if target_email == "admin@example.com":
+            any_active_admin = db.scalar(
+                select(User.id).where(User.role == "admin", User.is_active == True).limit(1)  # noqa: E712
+            )
+            if any_active_admin is not None:
+                return
         admin_user = User(
             email=settings.initial_admin_email.lower(),
             name=settings.initial_admin_name,
